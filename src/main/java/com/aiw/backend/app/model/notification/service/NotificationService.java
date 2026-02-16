@@ -106,6 +106,8 @@ public class NotificationService {
             notification.setContent(message);
             notification.setRelatedId(relatedId);
 
+            notification.setActivated(true);
+
             notificationRepository.save(notification);
         });
     }
@@ -122,6 +124,8 @@ public class NotificationService {
         notification.setTitle(title);
         notification.setContent(message);
         notification.setRelatedId(relatedId);
+
+        notification.setActivated(true);
 
         notificationRepository.save(notification);
     }

@@ -2,11 +2,12 @@ package com.aiw.backend.app.controller.api.mainpage.controller;
 
 import com.aiw.backend.app.model.personal_memo.dto.PersonalMemoDTO;
 import com.aiw.backend.app.model.personal_memo.service.PersonalMemoService;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/personalMemos")
+@RequestMapping(value = "/api/personalMemos", produces = MediaType.APPLICATION_JSON_VALUE)
 public class PersonalMemoController {
     private final PersonalMemoService personalMemoService;
 
