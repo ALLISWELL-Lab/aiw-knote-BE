@@ -1,4 +1,4 @@
-package com.aiw.backend.app.controller.api.mypage.controller;
+package com.aiw.backend.app.controller.api.mypage;
 
 import com.aiw.backend.app.model.notification.dto.NotificationDTO;
 import com.aiw.backend.app.model.notification.service.NotificationService;
