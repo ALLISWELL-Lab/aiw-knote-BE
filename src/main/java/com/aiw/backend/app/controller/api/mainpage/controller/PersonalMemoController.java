@@ -2,6 +2,8 @@ package com.aiw.backend.app.controller.api.mainpage.controller;
 
 import com.aiw.backend.app.model.personal_memo.dto.PersonalMemoDTO;
 import com.aiw.backend.app.model.personal_memo.service.PersonalMemoService;
+import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,21 +19,21 @@ public class PersonalMemoController {
 
     // 조회
     @GetMapping
-    public ResponseEntity<PersonalMemoDTO> getMemo(@RequestHeader("id") String authHeader) {
-        // 인증 로직 연동 전까지 하드코딩된 ID 1L 사용
-        Long currentMemberId = 1L;
-        return ResponseEntity.ok(personalMemoService.getMemo(currentMemberId));
+    @Operation(summary = "개인 메모 조회", description = "사용자의 개인 메모를 조회합니다.")
+    public ResponseEntity<PersonalMemoDTO> getMemo(
+            @RequestParam(name = "memberId") final Long memberId) {
+
+        return ResponseEntity.ok(personalMemoService.getMemo(memberId));
     }
 
     // 작성 및 수정
     @PostMapping
+    @Operation(summary = "개인 메모 저장/수정", description = "사용자의 개인 메모 내용을 저장하거나 업데이트합니다.")
     public ResponseEntity<PersonalMemoDTO> saveMemo(
-            @RequestHeader("id") String authHeader,
-            @RequestBody PersonalMemoDTO requestDTO) {
+            @RequestParam(name = "memberId") final Long memberId,
+            @RequestBody @Valid final PersonalMemoDTO requestDTO) {
 
-        Long currentMemberId = 1L;
-        PersonalMemoDTO response = personalMemoService.saveOrUpdate(currentMemberId, requestDTO.getContent());
-
+        PersonalMemoDTO response = personalMemoService.saveOrUpdate(memberId, requestDTO.getContent());
         return ResponseEntity.ok(response);
     }
 }
