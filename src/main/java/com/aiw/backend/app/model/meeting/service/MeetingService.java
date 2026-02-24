@@ -61,7 +61,7 @@ public class MeetingService {
     private MeetingDTO mapToDTO(final Meeting meeting, final MeetingDTO meetingDTO) {
         meetingDTO.setId(meeting.getId());
         meetingDTO.setAgenda(meeting.getAgenda());
-        meetingDTO.setSchduledAt(meeting.getScheduledAt());
+        meetingDTO.setSchduledAt(meeting.getSchduledAt());
         meetingDTO.setStartedAt(meeting.getStartedAt());
         meetingDTO.setEndedAt(meeting.getEndedAt());
         meetingDTO.setStatus(meeting.getStatus());
@@ -71,7 +71,7 @@ public class MeetingService {
 
     private Meeting mapToEntity(final MeetingDTO meetingDTO, final Meeting meeting) {
         meeting.setAgenda(meetingDTO.getAgenda());
-        meeting.setScheduledAt(meetingDTO.getSchduledAt());
+        meeting.setSchduledAt(meetingDTO.getSchduledAt());
         meeting.setStartedAt(meetingDTO.getStartedAt());
         meeting.setEndedAt(meetingDTO.getEndedAt());
         meeting.setStatus(meetingDTO.getStatus());
