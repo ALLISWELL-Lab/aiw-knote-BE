@@ -1,6 +1,6 @@
 package com.aiw.backend.app.controller.api.mainpage.controller;
 
-import com.aiw.backend.app.model.daily_brief.dto.DailyBriefDTO;
+import com.aiw.backend.app.model.comment.dto.DailyBriefDTO;
 import com.aiw.backend.app.model.daily_brief.service.DailyBriefService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;

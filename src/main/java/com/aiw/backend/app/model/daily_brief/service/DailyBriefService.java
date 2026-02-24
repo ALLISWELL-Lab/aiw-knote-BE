@@ -3,7 +3,7 @@ package com.aiw.backend.app.model.daily_brief.service;
 
 import com.aiw.backend.app.model.action_item.repository.ActionItemRepository;
 import com.aiw.backend.app.model.daily_brief.domain.DailyBrief;
-import com.aiw.backend.app.model.daily_brief.dto.DailyBriefDTO;
+import com.aiw.backend.app.model.comment.dto.DailyBriefDTO;
 import com.aiw.backend.app.model.daily_brief.repository.DailyBriefRepository;
 import com.aiw.backend.app.model.meeting.repository.MeetingRepository;
 import com.aiw.backend.events.BeforeDeleteMember;

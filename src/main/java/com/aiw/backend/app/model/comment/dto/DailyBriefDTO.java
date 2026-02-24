@@ -1,4 +1,4 @@
-package com.aiw.backend.app.model.daily_brief.dto;
+package com.aiw.backend.app.model.comment.dto;
 
 import lombok.*;
 
