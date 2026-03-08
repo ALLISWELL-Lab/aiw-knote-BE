@@ -38,6 +38,22 @@ public class ActionItemService {
                 .toList();
     }
 
+    public List<ActionItemDTO> getActionItems(Long assigneeMemberId) {
+        List<ActionItem> actionItems;
+
+        if (assigneeMemberId != null) {
+            // 특정 멤버의 ActionItem 조회
+            actionItems = actionItemRepository.findByAssigneeMemberId(assigneeMemberId);
+        } else {
+            // 전체 조회
+            actionItems = actionItemRepository.findAll(Sort.by("id"));
+        }
+
+        return actionItems.stream()
+                .map(actionItem -> mapToDTO(actionItem, new ActionItemDTO()))
+                .toList();
+    }
+
     public ActionItemDTO get(final Long id) {
         return actionItemRepository.findById(id)
                 .map(actionItem -> mapToDTO(actionItem, new ActionItemDTO()))
