@@ -39,10 +39,10 @@ public class ActionItemController {
   }
 
   @PutMapping("/{id}")
-  public ResponseEntity<Long> updateActionItem(@PathVariable(name = "id") final Long id,
+  public ResponseEntity<ActionItemDTO> updateActionItem(@PathVariable(name = "id") final Long id,
       @RequestBody @Valid final ActionItemDTO actionItemDTO) {
-    actionItemService.update(id, actionItemDTO);
-    return ResponseEntity.ok(id);
+    ActionItemDTO updatedDTO = actionItemService.update(id, actionItemDTO);
+    return ResponseEntity.ok(updatedDTO);
   }
 
   @DeleteMapping("/{id}")
