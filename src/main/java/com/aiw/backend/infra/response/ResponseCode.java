@@ -4,6 +4,11 @@ import org.springframework.http.HttpStatus;
 
 public enum ResponseCode {
     OK("0000", HttpStatus.OK, "정상적으로 완료되었습니다."),
+    SIGNUP_SUCCESS("0001", HttpStatus.CREATED, "회원가입이 완료되었습니다."),
+    LOGIN_SUCCESS("0002", HttpStatus.OK, "로그인에 성공했습니다."),
+    LOGOUT_SUCCESS("0003", HttpStatus.OK, "로그아웃에 성공했습니다."),
+    TOKEN_REFRESH_SUCCESS("0004", HttpStatus.OK, "토큰이 재발급되었습니다."),
+
     BAD_REQUEST("4000", HttpStatus.BAD_REQUEST, "잘못된 요청입니다."),
     INVALID_FILENAME("4001", HttpStatus.BAD_REQUEST, "사용 할 수 없는 파일 이름입니다."),
     DUPLICATE_EMAIL("4002", HttpStatus.BAD_REQUEST, "이미 사용 중인 이메일입니다."),

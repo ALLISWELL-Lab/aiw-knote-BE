@@ -7,26 +7,21 @@ import com.aiw.backend.app.model.auth.code.AuthToken;
 import com.aiw.backend.app.model.auth.dto.TokenDto;
 import com.aiw.backend.app.model.auth.token.RefreshTokenService;
 import com.aiw.backend.app.model.auth.token.entity.RefreshToken;
-import com.aiw.backend.app.model.member.dto.MemberDTO;
 import com.aiw.backend.infra.auth.jwt.JwtTokenProvider;
 import com.aiw.backend.infra.auth.jwt.TokenCookieFactory;
 import com.aiw.backend.infra.auth.jwt.dto.AccessTokenDto;
 import com.aiw.backend.infra.error.exceptions.AuthApiException;
+import com.aiw.backend.infra.error.exceptions.CommonException;
+import com.aiw.backend.infra.response.ApiResponse;
 import com.aiw.backend.infra.response.ResponseCode;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,14 +40,33 @@ public class AuthController {
 
   // 회원가입
   @PostMapping("/signup")
-  public ResponseEntity<Void> signup(@RequestBody @Valid SignupRequest request) {
-    authService.signup(request);
-    return ResponseEntity.status(HttpStatus.CREATED).build();
+  public ResponseEntity<ApiResponse<Void>> signup(@RequestBody @Valid SignupRequest request) {
+    try {
+      authService.signup(request);
+
+      return ResponseEntity
+          .status(ResponseCode.SIGNUP_SUCCESS.status())
+          .body(ApiResponse.success(ResponseCode.SIGNUP_SUCCESS));
+
+    } catch (CommonException e) {
+
+      ResponseCode code = e.code();
+
+      return ResponseEntity
+          .status(code.status())
+          .body(ApiResponse.error(code));
+
+    } catch (Exception e) {
+
+      return ResponseEntity
+          .status(ResponseCode.INTERNAL_SERVER_ERROR.status())
+          .body(ApiResponse.error(ResponseCode.INTERNAL_SERVER_ERROR));
+    }
   }
 
   // 로그인
   @PostMapping("/login")
-  public ResponseEntity<TokenDto> login(@RequestBody @Valid LoginRequest req,
+  public ResponseEntity<ApiResponse<TokenDto>> login(@RequestBody @Valid LoginRequest req,
       HttpServletResponse response) {
     TokenDto tokenDto = authService.signin(req);
 
@@ -65,12 +79,14 @@ public class AuthController {
     response.addHeader("Set-Cookie",
         TokenCookieFactory.create(AuthToken.REFRESH_TOKEN.name(), tokenDto.getRefreshToken(), refreshTtlSeconds).toString());
 
-    return ResponseEntity.ok(tokenDto);
+    return ResponseEntity
+        .status(ResponseCode.LOGIN_SUCCESS.status())
+        .body(ApiResponse.success(ResponseCode.LOGIN_SUCCESS, tokenDto));
   }
 
   // 로그아웃
   @PostMapping("/logout")
-  public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
+  public ResponseEntity<ApiResponse<Void>> logout(HttpServletRequest request, HttpServletResponse response) {
     String accessToken = jwtTokenProvider.resolveToken(request, AuthToken.ACCESS_TOKEN);
 
     if (accessToken != null && !accessToken.isBlank()) {
@@ -89,11 +105,13 @@ public class AuthController {
     response.addHeader("Set-Cookie",
         TokenCookieFactory.createExpiredToken(AuthToken.REFRESH_TOKEN.name()).toString());
 
-    return ResponseEntity.noContent().build();
+    return ResponseEntity
+        .status(ResponseCode.LOGOUT_SUCCESS.status())
+        .body(ApiResponse.success(ResponseCode.LOGOUT_SUCCESS));
   }
 
   @PostMapping("/refresh")
-  public ResponseEntity<TokenDto> refresh(HttpServletRequest request, HttpServletResponse response) {
+  public ResponseEntity<ApiResponse<TokenDto>> refresh(HttpServletRequest request, HttpServletResponse response) {
     String accessToken = jwtTokenProvider.resolveToken(request, AuthToken.ACCESS_TOKEN);
     String refreshToken = jwtTokenProvider.resolveToken(request, AuthToken.REFRESH_TOKEN);
 
@@ -135,6 +153,8 @@ public class AuthController {
     response.addHeader("Set-Cookie",
         TokenCookieFactory.create(AuthToken.REFRESH_TOKEN.name(), dto.getRefreshToken(), refreshTtlSeconds).toString());
 
-    return ResponseEntity.ok(dto);
+    return ResponseEntity
+        .status(ResponseCode.TOKEN_REFRESH_SUCCESS.status())
+        .body(ApiResponse.success(ResponseCode.TOKEN_REFRESH_SUCCESS, dto));
   }
 }

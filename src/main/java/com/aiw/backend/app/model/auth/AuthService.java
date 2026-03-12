@@ -36,6 +36,7 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final MemberRepository memberRepository;
 
+  @Transactional
   public TokenDto signin(LoginRequest loginRequest) {
     UsernamePasswordAuthenticationToken authenticationToken =
         new UsernamePasswordAuthenticationToken(loginRequest.getEmail(),
