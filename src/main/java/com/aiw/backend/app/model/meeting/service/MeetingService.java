@@ -9,6 +9,8 @@ import com.aiw.backend.app.controller.api.meeting.payload.ShowSttStatusResponse;
 import com.aiw.backend.app.model.meeting.domain.Meeting;
 import com.aiw.backend.app.model.meeting.dto.MeetingDTO;
 import com.aiw.backend.app.model.meeting.repository.MeetingRepository;
+import com.aiw.backend.app.model.project.domain.Project;
+import com.aiw.backend.app.model.project.repository.ProjectRepository;
 import com.aiw.backend.events.BeforeDeleteMeeting;
 import com.aiw.backend.util.CustomCollectors;
 import com.aiw.backend.util.NotFoundException;
@@ -32,11 +34,17 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class MeetingService {
 
-  private final MeetingRepository meetingRepository;
-  private final ApplicationEventPublisher publisher;
+    private final MeetingRepository meetingRepository;
+    private final ProjectRepository projectRepository;
+    private final ApplicationEventPublisher publisher;
 
-  private final AtomicLong meetingSequence = new AtomicLong(1);
-  private final Map<Long, String> meetingStatusMap = new ConcurrentHashMap<>();
+    public MeetingService(final MeetingRepository meetingRepository,
+                          final ProjectRepository projectRepository,
+            final ApplicationEventPublisher publisher) {
+        this.meetingRepository = meetingRepository;
+        this.projectRepository = projectRepository;
+        this.publisher = publisher;
+    }
 
   public MeetingService(final MeetingRepository meetingRepository,
       final ApplicationEventPublisher publisher) {
@@ -51,10 +59,15 @@ public class MeetingService {
     );
   }
 
-  // 회의 생성
-  public CreateMeetingRecordResponse createMeeting(CreateMeetingRecordRequest request) {
-    Long meetingId = meetingSequence.getAndIncrement();
-    meetingStatusMap.put(meetingId, "PENDING");
+    public Long create(final MeetingDTO meetingDTO) {
+        final Meeting meeting = new Meeting();
+        mapToEntity(meetingDTO, meeting);
+        // 전달받은 projectId로 프로젝트를 찾아 연결
+        Project project = projectRepository.findById(meetingDTO.getProjectId())
+                .orElseThrow(() -> new NotFoundException("프로젝트를 찾을 수 없습니다."));
+        meeting.setProject(project);
+        return meetingRepository.save(meeting).getId();
+    }
 
     return new CreateMeetingRecordResponse(
         meetingId,
