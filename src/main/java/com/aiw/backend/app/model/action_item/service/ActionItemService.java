@@ -39,6 +39,8 @@ public class ActionItemService {
                 .toList();
     }
 
+    //특정 member의 할 일 목록 조회
+    //id가 없다면 전체 목록 반환
     public List<ActionItemDTO> getActionItems(Long assigneeMemberId) {
         List<ActionItem> actionItems;
 
@@ -55,18 +57,23 @@ public class ActionItemService {
                 .toList();
     }
 
+    //특정 id를 가진 할 일 상세 정보 조회
     public ActionItemDTO get(final Long id) {
         return actionItemRepository.findById(id)
                 .map(actionItem -> mapToDTO(actionItem, new ActionItemDTO()))
                 .orElseThrow(NotFoundException::new);
     }
 
+    //새로운 할 일 생성
+    //저장된 데이터 id 반환
     public Long create(final ActionItemDTO actionItemDTO) {
         final ActionItem actionItem = new ActionItem();
         mapToEntity(actionItemDTO, actionItem);
         return actionItemRepository.save(actionItem).getId();
     }
 
+    //기존 할 일 정보(제목, 완료 여부, 메모, 담당자) 수정
+    //업데이트 결과 반환
     @Transactional
     public ActionItemDTO update(final Long id, final ActionItemDTO actionItemDTO) {
         final ActionItem actionItem = actionItemRepository.findById(id)
@@ -92,12 +99,14 @@ public class ActionItemService {
         return mapToDTO(updatedItem, new ActionItemDTO());
     }
 
+    //삭제
     public void delete(final Long id) {
         final ActionItem actionItem = actionItemRepository.findById(id)
                 .orElseThrow(NotFoundException::new);
         actionItemRepository.delete(actionItem);
     }
 
+    //Action Item 엔티티를 DTO로 변환
     private ActionItemDTO mapToDTO(final ActionItem actionItem, final ActionItemDTO actionItemDTO) {
         actionItemDTO.setId(actionItem.getId());
         actionItemDTO.setTitle(actionItem.getTitle());
@@ -113,6 +122,7 @@ public class ActionItemService {
         return actionItemDTO;
     }
 
+    //Action Item DTO를 엔티티로 변환해서 매핑
     private ActionItem mapToEntity(final ActionItemDTO actionItemDTO, final ActionItem actionItem) {
         actionItem.setTitle(actionItemDTO.getTitle());
         actionItem.setDueDate(actionItemDTO.getDueDate());
@@ -130,6 +140,9 @@ public class ActionItemService {
         actionItem.setAssigneeMember(assigneeMember);
         return actionItem;
     }
+
+    //회의 삭제 전 이벤트 리스너
+    //해당 회의에 연결된 할 일 있는지 확인
     @EventListener(BeforeDeleteMeeting.class)
     public void on(final BeforeDeleteMeeting event) {
         final ReferencedException referencedException = new ReferencedException();
@@ -141,6 +154,8 @@ public class ActionItemService {
         }
     }
 
+    //회원 삭제 전 이벤트 리스너
+    //해당 회원이 담당자로 지정된 할 일 있는지 확인
     @EventListener(BeforeDeleteMember.class)
     public void on(final BeforeDeleteMember event) {
         final ReferencedException referencedException = new ReferencedException();
