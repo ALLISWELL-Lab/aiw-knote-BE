@@ -21,6 +21,7 @@ public class CalendarService {
     private final MeetingRepository meetingRepository;
     private final ActionItemRepository actionItemRepository;
 
+    //대시보드 표시: 일정을 날짜별로 조회
     public CalendarDTO getMonthlyCalendar(final Long memberId, final int year, final int month){
 
         // 1. 조회할 달의 시작과 끝 계산

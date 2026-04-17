@@ -23,23 +23,27 @@ public class MemberController {
     }
 
     @GetMapping
+    @Operation(summary = "전체 회원 조회", description = "시스템에 등록된 모든 회원 목록을 조회합니다.")
     public ResponseEntity<List<MemberDTO>> getAllMembers() {
         return ResponseEntity.ok(memberService.findAll());
     }
 
     @GetMapping("/{id}")
+    @Operation(summary = "특정 회원 상세 조회", description = "회원 ID를 기반으로 특정 회원의 정보를 조회합니다.")
     public ResponseEntity<MemberDTO> getMember(@PathVariable(name = "id") final Long id) {
         return ResponseEntity.ok(memberService.get(id));
     }
 
     @PostMapping
     @ApiResponse(responseCode = "201")
+    @Operation(summary = "신규 회원 생성", description = "새로운 회원 정보를 등록합니다.")
     public ResponseEntity<MemberDTO> createMember(@RequestBody @Valid final MemberDTO memberDTO) {
         final MemberDTO createdMember = memberService.create(memberDTO);
         return new ResponseEntity<>(createdMember, HttpStatus.CREATED);
     }
 
     @PutMapping("/{id}")
+    @Operation(summary = "회원 정보 수정", description = "기존 회원의 전체 정보를 업데이트합니다.")
     public ResponseEntity<Long> updateMember(@PathVariable(name = "id") final Long id,
             @RequestBody @Valid final MemberDTO memberDTO) {
         memberService.update(id, memberDTO);
@@ -48,6 +52,7 @@ public class MemberController {
 
     @DeleteMapping("/{id}")
     @ApiResponse(responseCode = "204")
+    @Operation(summary = "회원 탈퇴/삭제", description = "특정 회원 데이터를 시스템에서 삭제합니다.")
     public ResponseEntity<Void> deleteMember(@PathVariable(name = "id") final Long id) {
         memberService.delete(id);
         return ResponseEntity.noContent().build();
