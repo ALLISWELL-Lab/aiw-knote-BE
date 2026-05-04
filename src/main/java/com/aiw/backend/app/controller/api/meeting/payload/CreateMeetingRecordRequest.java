@@ -10,7 +10,8 @@ import lombok.Setter;
 @AllArgsConstructor
 @NoArgsConstructor
 public class CreateMeetingRecordRequest {
-  String title;
-  String description;
-  String startedAt;
+  private String agenda;
+  private String description;
+  private String startedAt;
+  private Long projectId;
 }

@@ -2,10 +2,13 @@ package com.aiw.backend.app.model.meeting.service;
 
 import com.aiw.backend.app.controller.api.meeting.payload.CreateMeetingRecordRequest;
 import com.aiw.backend.app.controller.api.meeting.payload.CreateMeetingRecordResponse;
+import com.aiw.backend.app.controller.api.meeting.payload.MeetingAnalysisDetailResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowAISummaryResponse;
-import com.aiw.backend.app.controller.api.meeting.payload.ShowActionItemResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowMeetingListResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowSttStatusResponse;
+import com.aiw.backend.app.controller.api.meeting.payload.action_item.ActionItemResponse;
+import com.aiw.backend.app.model.action_item.domain.ActionItem;
+import com.aiw.backend.app.model.action_item.repository.ActionItemRepository;
 import com.aiw.backend.app.model.meeting.domain.Meeting;
 import com.aiw.backend.app.model.meeting.dto.MeetingDTO;
 import com.aiw.backend.app.model.meeting.repository.MeetingRepository;
@@ -14,12 +17,17 @@ import com.aiw.backend.app.model.project.repository.ProjectRepository;
 import com.aiw.backend.events.BeforeDeleteMeeting;
 import com.aiw.backend.util.CustomCollectors;
 import com.aiw.backend.util.NotFoundException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
@@ -27,11 +35,12 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-
+@Slf4j
 @Service
 public class MeetingService {
 
@@ -39,26 +48,33 @@ public class MeetingService {
   private final ApplicationEventPublisher publisher;
 
   private final ProjectRepository projectRepository;
+  private final ActionItemRepository actionItemRepository;
 
   private final AtomicLong meetingSequence = new AtomicLong(1);
   private final Map<Long, String> meetingStatusMap = new ConcurrentHashMap<>();
 
+  private final OpenAiService openAiService;
+
   public MeetingService(
       final MeetingRepository meetingRepository,
       final ApplicationEventPublisher publisher,
-      final ProjectRepository projectRepository
+      final ProjectRepository projectRepository,
+      final OpenAiService openAiService,
+      final ActionItemRepository actionItemRepository
   ) {
     this.meetingRepository = meetingRepository;
     this.publisher = publisher;
     this.projectRepository = projectRepository;
+    this.openAiService = openAiService;
+    this.actionItemRepository = actionItemRepository;
   }
 
-  public List<ShowMeetingListResponse> getMeetingRecords() {
-    return List.of(
-        new ShowMeetingListResponse(1L, "주간 회의", "2026-03-18T14:00:00", "COMPLETED"),
-        new ShowMeetingListResponse(2L, "기획 회의", "2026-03-19T10:00:00", "PROCESSING")
-    );
-  }
+//  public List<ShowMeetingListResponse> getMeetingRecords() {
+//    return List.of(
+//        new ShowMeetingListResponse(1L, "주간 회의", "2026-03-18T14:00:00", "COMPLETED"),
+//        new ShowMeetingListResponse(2L, "기획 회의", "2026-03-19T10:00:00", "PROCESSING")
+//    );
+//  }
 
   @Transactional
   public MeetingDTO create(final MeetingDTO meetingDTO) {
@@ -84,7 +100,7 @@ public class MeetingService {
     return new CreateMeetingRecordResponse(
         meetingId,
         3L,
-        request.getTitle(),
+        request.getAgenda(),
         "PENDING",
         LocalDateTime.now()
     );
@@ -93,21 +109,164 @@ public class MeetingService {
   // 파일 업로드 생성
   public CreateMeetingRecordResponse createMeetingByFile(MultipartFile file,
       CreateMeetingRecordRequest request) {
+// 1. 회의 기본 정보 생성 및 즉시 저장
+    Meeting meeting = new Meeting();
+    meeting.setAgenda(request.getAgenda() != null ? request.getAgenda() : "새로운 회의");
 
-    if (file == null || file.isEmpty()) {
-      throw new IllegalArgumentException("업로드된 파일이 없습니다.");
+    // 프로젝트 연결 (안전하게 orElseThrow 권장)
+    Project project = projectRepository.findById(1L)
+        .orElseThrow(() -> new NotFoundException("1번 프로젝트가 없습니다."));
+    meeting.setProject(project);
+
+    meeting.setStatus("PENDING");
+    meeting.setActivated(true);
+    meeting.setCreatedType("FILE");
+    meeting.setScheduledAt(LocalDateTime.now());
+    meeting.setStartedAt(LocalDateTime.now());
+    meeting.setEndedAt(LocalDateTime.now());
+
+    // DB에 즉시 반영
+    Meeting savedMeeting = meetingRepository.saveAndFlush(meeting);
+
+    // [수정 포인트] 파일이 사라지기 전에 바이트 배열로 복사
+    final byte[] fileBytes;
+    final String originalFilename = file.getOriginalFilename();
+    try {
+      fileBytes = file.getBytes();
+    } catch (IOException e) {
+      log.error("파일 읽기 실패", e);
+      throw new RuntimeException("파일을 읽을 수 없습니다.");
     }
 
-    Long meetingId = meetingSequence.getAndIncrement();
-    meetingStatusMap.put(meetingId, "PENDING");
+    // 2. 별도 스레드에 복사본(fileBytes)을 넘김
+    new Thread(() -> {
+      // processAiTasks 메서드도 (Long, byte[], String)을 받도록 수정해야 함
+      processAiTasks(savedMeeting.getId(), fileBytes, originalFilename);
+    }).start();
 
     return new CreateMeetingRecordResponse(
-        meetingId,
-        1L,
-        request.getTitle(),
-        "PENDING",
+        savedMeeting.getId(),
+        null,
+        savedMeeting.getAgenda(),
+        savedMeeting.getStatus(),
         LocalDateTime.now()
     );
+  }
+
+  @Async
+  @Transactional
+  public void processAiTasks(Long meetingId, byte[] fileBytes, String originalFilename) {
+    try {
+      log.info("AI 작업 시작 - 회의 ID: {}", meetingId);
+      Meeting meeting = meetingRepository.findById(meetingId)
+          .orElseThrow(() -> new RuntimeException("회의를 찾을 수 없습니다."));
+
+      // 1. STT 호출 (Whisper)
+      String transcript = openAiService.transcribe(fileBytes, originalFilename);
+      meeting.setTranscript(transcript);
+      meeting.setStatus("PROCESSING");
+      meetingRepository.saveAndFlush(meeting);
+
+      // 2. 요약 및 분석 호출 (GPT)
+      // 이제 openAiService.summarize(transcript)는 JSON 형태의 문자열을 반환해야 합니다.
+      String aiJsonResponse = openAiService.summarize(transcript);
+
+      // JSON 파싱을 위한 ObjectMapper
+      ObjectMapper mapper = new ObjectMapper();
+      JsonNode root = mapper.readTree(aiJsonResponse);
+
+      // 3. Meeting 엔티티 업데이트 (사진의 기획안 반영)
+      // DB 필드명에 맞춰 적절히 매핑하세요.
+      meeting.setAiSummary(root.path("summarySegments").toString()); // 메인 요약본
+      // meeting.setDecisions(root.path("decisions").toString()); // 결정사항 필드가 있다면 추가
+      meeting.setStatus("COMPLETED");
+      meetingRepository.saveAndFlush(meeting);
+
+      // 4. ActionItem(AI TODO) 추출 및 저장
+      JsonNode actionItemsNode = root.path("actionItems");
+      if (actionItemsNode.isArray()) {
+        for (JsonNode node : actionItemsNode) {
+          ActionItem item = new ActionItem();
+
+          // AI가 추출한 값
+          item.setTitle(node.path("title").asText("새로운 할 일"));
+          item.setMemo(node.path("memo").asText("내용 없음"));
+
+          // 도메인 제약조건(nullable=false)에 따른 필수 기본값 세팅
+          item.setMeeting(meeting);
+          item.setCompleted(false);
+          item.setActivated(true);
+          item.setIsConfirmed(true); // AI가 생성한 것이므로 일단 true 혹은 false
+          item.setDueDate(LocalDateTime.now().plusDays(3)); // 기본 마감기한 3일 뒤
+          item.setPhase(1L); // 기본 단계
+          item.setScope("TEAM"); // 기본 범위
+          item.setImage("default.png"); // 기본 이미지
+
+          // 담당자(assigneeMember)는 nullable이므로 세팅하지 않아도 됨
+
+          actionItemRepository.save(item);
+        }
+      }
+
+      log.info("모든 데이터(요약 + ActionItems) DB 저장 완료!");
+
+    } catch (Exception e) {
+      log.error("!!! 비동기 스레드 에러 발생 !!! : ", e);
+    }
+  }
+
+  // 회의 목록 조회
+  public List<ShowMeetingListResponse> getMeetingRecords() {
+    List<Meeting> meetings = meetingRepository.findAll();
+    return meetings.stream()
+        .map(m -> new ShowMeetingListResponse(
+            m.getId(),
+            m.getAgenda(),
+            m.getCreatedAt().toString(),
+            m.getStatus()
+        ))
+        .collect(Collectors.toList());
+  }
+
+  // 회의 요약 상세 분석 결과 조회
+  public MeetingAnalysisDetailResponse getMeetingAnalysis(Long meetingId) {
+    Meeting meeting = meetingRepository.findById(meetingId)
+        .orElseThrow(() -> new NotFoundException("회의를 찾을 수 없습니다."));
+
+    // List<ActionItem>으로 타입을 명시
+    List<ActionItem> actionItemsList = actionItemRepository.findByMeeting(meeting);
+
+    List<ActionItemResponse> actionItems = actionItemsList.stream()
+        .map(a -> new ActionItemResponse(
+            a.getId(),
+            a.getTitle(),
+            a.getMemo(),
+            a.getCompleted() // 도메인의 필드명이 getCompleted인지 확인!
+        ))
+        .collect(Collectors.toList());
+
+    // DTO 생성자 인수를 4개로 맞춰서 반환
+    return new MeetingAnalysisDetailResponse(
+        meeting.getId(),
+        meeting.getAgenda(),
+        meeting.getAiSummary(), // JSON 통째로 전달
+        meeting.getTranscript(),
+        actionItems
+    );
+  }
+
+  // 다운로드 API
+  public ResponseEntity<Resource> downloadMeetingStt(Long meetingId) {
+    Meeting meeting = meetingRepository.findById(meetingId)
+        .orElseThrow(() -> new NotFoundException("회의를 찾을 수 없습니다."));
+
+    String content = meeting.getTranscript(); // DB에서 꺼내옴
+    ByteArrayResource resource = new ByteArrayResource(content.getBytes(StandardCharsets.UTF_8));
+
+    return ResponseEntity.ok()
+        .contentType(MediaType.TEXT_PLAIN)
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"meeting_" + meetingId + "_stt.txt\"")
+        .body(resource);
   }
 
   // 상태 조회
@@ -122,148 +281,40 @@ public class MeetingService {
   }
 
   public ShowAISummaryResponse createSummary(Long meetingId) {
+    // 1. DB에서 회의 정보 조회
+    Meeting meeting = meetingRepository.findById(meetingId)
+        .orElseThrow(() -> new NotFoundException("회의를 찾을 수 없습니다."));
+
+    // 2. 만약 아직 요약이 없다면 (비동기 처리가 덜 끝났거나 오류난 경우)
+    if (meeting.getAiSummary() == null || meeting.getAiSummary().isEmpty()) {
+      // 이미 status가 COMPLETED가 아니라면 아직 처리 중임을 알림
+      if (!"COMPLETED".equals(meeting.getStatus())) {
+        throw new RuntimeException("AI 분석이 아직 진행 중입니다. 잠시 후 다시 시도해주세요.");
+      }
+
+      // 만약 transcript는 있는데 요약만 없는 특수 상황이라면 여기서 생성 가능
+      if (meeting.getTranscript() != null) {
+        String summary = openAiService.summarize(meeting.getTranscript());
+        meeting.setAiSummary(summary);
+        meetingRepository.save(meeting);
+      }
+    }
+
+    // 3. 기존 DTO 형식에 맞춰 반환
+    // (현재 ShowAISummaryResponse의 필드 구성에 따라 meeting 엔티티의 값을 매핑하세요)
     return new ShowAISummaryResponse(
-        meetingId,
-        "2025/12/11 - 방학과 그로스 진행 관련",
-        "2025-12-11T10:00:00",
-        List.of("김이화", "이화연", "하주희", "전우치"),
-        List.of(
-            "방학 내에 개발 완료하기",
-            "일주일에 회의는 기본 두 번",
-            "2인 1조로 역할 분담하기"
-        ),
-        List.of(
-            "이번 회의에서는 프로젝트 진행 상황을 점검하고, 방학 중 개발 목표를 다시 정리하였다. 팀원들은 핵심 기능 위주로 우선 완성도를 높이는 방향이 필요하다는 데 의견을 모았다.",
-            "특히 회의 운영 방식과 관련해서는 주 2회 이상의 정기 회의를 통해 업무 진척과 막히는 부분을 빠르게 공유하자는 이야기가 나왔다. 이를 통해 작업 공백을 줄이고 각 기능별 책임 범위를 더 명확하게 하기로 했다.",
-            "또한 화면 설계와 백엔드 구현을 병행하기 위해, 회의가 끝난 직후 결정사항과 TODO를 바로 정리하는 방식이 필요하다는 결론이 나왔고, 회의 분석 페이지에서도 해당 정보가 한눈에 보이도록 구성하기로 했다."
-        )
+        meeting.getId(),
+        meeting.getAgenda(), // 회의 주제
+        meeting.getCreatedAt().toString(), // 생성 시간
+        List.of("참석자"), // 참석자 리스트 (엔티티에 있다면 매핑, 없으면 임시 리스트)
+        List.of("결정 사항"), // 결정 사항 (필요 시 요약문에서 파싱)
+        List.of(meeting.getAiSummary()) // 요약 내용
     );
   }
 
-  public List<ShowActionItemResponse> getActionItems(Long meetingId) {
-    if (meetingId.equals(1L)) {
-      return List.of(
-          new ShowActionItemResponse(
-              1L,
-              LocalDateTime.of(2026, 3, 20, 18, 0),
-              "피그마 프로토타입에서 발전시키기",
-              "김이화",
-              "TODO"
-          ),
-          new ShowActionItemResponse(
-              2L,
-              LocalDateTime.of(2026, 3, 21, 14, 0),
-              "피그마 디자인 시작하기",
-              "이화연",
-              "IN_PROGRESS"
-          ),
-          new ShowActionItemResponse(
-              3L,
-              LocalDateTime.of(2026, 3, 22, 16, 0),
-              "MOCK 서버 완성하기",
-              "하주희",
-              "TODO"
-          ),
-          new ShowActionItemResponse(
-              4L,
-              LocalDateTime.of(2026, 3, 23, 12, 0),
-              "데이터베이스 설계 완성하기",
-              "전우치",
-              "DONE"
-          ),
-          new ShowActionItemResponse(
-              5L,
-              LocalDateTime.of(2026, 3, 24, 11, 0),
-              "API 명세서 수정 완료하기",
-              "김이화",
-              "TODO"
-          )
-      );
-    }
-
-    if (meetingId.equals(2L)) {
-      return List.of(
-          new ShowActionItemResponse(
-              6L,
-              LocalDateTime.of(2026, 3, 25, 18, 0),
-              "로그인 예외 처리 응답 형식 통일하기",
-              "김이화",
-              "IN_PROGRESS"
-          ),
-          new ShowActionItemResponse(
-              7L,
-              LocalDateTime.of(2026, 3, 26, 15, 0),
-              "회의 생성 API 프론트 연결하기",
-              "전우치",
-              "TODO"
-          ),
-          new ShowActionItemResponse(
-              8L,
-              LocalDateTime.of(2026, 3, 27, 17, 0),
-              "STT 상태 조회 화면 구성하기",
-              "이화연",
-              "TODO"
-          )
-      );
-    }
-
-    if (meetingId.equals(3L)) {
-      return List.of(
-          new ShowActionItemResponse(
-              9L,
-              LocalDateTime.of(2026, 3, 28, 13, 0),
-              "회의 분석 페이지 요약 카드 UI 반영하기",
-              "김이화",
-              "IN_PROGRESS"
-          ),
-          new ShowActionItemResponse(
-              10L,
-              LocalDateTime.of(2026, 3, 29, 16, 0),
-              "STT 원문 다운로드 기능 테스트하기",
-              "이화연",
-              "TODO"
-          ),
-          new ShowActionItemResponse(
-              11L,
-              LocalDateTime.of(2026, 3, 30, 18, 0),
-              "액션 아이템 도메인 분리 구조 초안 잡기",
-              "하주희",
-              "TODO"
-          )
-      );
-    }
-    throw new NotFoundException();
-  }
-
-  public ResponseEntity<Resource> downloadMeetingStt(Long meetingId) {
-    if (!meetingId.equals(1L) && !meetingId.equals(2L) && !meetingId.equals(3L)) {
-      throw new NotFoundException();
-    }
-
-    String content = """
-    [00:00:01 - 00:00:07] 화자1: 오늘 회의 시작하겠습니다. 먼저 지난 회의에서 정리했던 로그인 기능 수정 진행 상황부터 확인하겠습니다.
-    [00:00:08 - 00:00:16] 화자2: 로그인 예외 처리 부분은 거의 마무리되었고, 현재는 응답 형식 통일 작업이 조금 남아 있습니다.
-    [00:00:17 - 00:00:27] 화자1: 그러면 그 부분은 오늘 안으로 정리 가능할까요? 프론트에서 붙이려면 에러 응답 형태가 먼저 정리되어야 할 것 같습니다.
-    [00:00:28 - 00:00:37] 화자3: 네, 오늘 중으로 가능합니다. 그리고 회의 생성 API 쪽은 녹음 직접 생성과 파일 업로드 생성 두 가지 흐름 모두 확인해봤습니다.
-    [00:00:38 - 00:00:49] 화자2: 다만 지금 목서버 기준으로는 meetingId가 고정되어 있고 STT 상태도 항상 completed만 내려가고 있어서 프론트 테스트에는 조금 불편한 상태입니다.
-    [00:00:50 - 00:01:01] 화자1: 그럼 상태를 pending, processing, completed, failed 정도로 나눠서 테스트할 수 있게 해야겠네요.
-    [00:01:02 - 00:01:13] 화자4: 네, 그리고 summary도 지금 한 줄로만 내려오면 화면이 너무 비어 보여서 segment 단위로 더 길게 주는 편이 좋겠습니다.
-    [00:01:14 - 00:01:26] 화자3: 피그마 기준으로 보면 오른쪽 영역은 summary segment 카드 여러 개로 구성되어 있어서, 최소 3개 이상의 블록이 있으면 훨씬 자연스럽게 보일 것 같습니다.
-    [00:01:27 - 00:01:39] 화자2: 왼쪽에는 결정사항하고 action item이 따로 보이니까, 요약 응답도 그 구조에 맞게 나눠주는 게 좋을 것 같습니다.
-    [00:01:40 - 00:01:52] 화자1: 좋습니다. 그러면 백엔드는 meeting analysis 화면에 맞는 mock 응답 구조를 우선 맞추고, action item 도메인은 별도로 만들되 meeting과 연결만 해두는 방향으로 진행하겠습니다.
-    [00:01:53 - 00:02:04] 화자4: action item은 회의에서 파생된 todo라는 점만 유지하면 될 것 같고, 상세 관리나 상태 변경은 action item 도메인에서 담당하면 될 것 같습니다.
-    [00:02:05 - 00:02:15] 화자1: 네, 그러면 오늘 회의에서는 API 응답 구조 개편과 action item 도메인 분리 방향까지 정리된 걸로 하겠습니다.
-    """;
-
-    ByteArrayResource resource = new ByteArrayResource(content.getBytes(StandardCharsets.UTF_8));
-    String fileName = "meeting-" + meetingId + "-stt.txt";
-
-    return ResponseEntity.ok()
-        .contentType(MediaType.TEXT_PLAIN)
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
-        .contentLength(content.getBytes(StandardCharsets.UTF_8).length)
-        .body(resource);
-  }
+//  public List<ShowActionItemResponse> getActionItems(Long meetingId) {
+//
+//  }
 
   public List<MeetingDTO> findAll() {
     final List<Meeting> meetings = meetingRepository.findAll(Sort.by("id"));

@@ -1,10 +1,10 @@
 package com.aiw.backend.app.controller.api.meeting;
 
-import com.aiw.backend.app.controller.api.meeting.payload.ShowActionItemResponse;
-import com.aiw.backend.app.controller.api.meeting.payload.CreateMeetingRecordResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.CreateMeetingRecordRequest;
-import com.aiw.backend.app.controller.api.meeting.payload.ShowMeetingListResponse;
+import com.aiw.backend.app.controller.api.meeting.payload.CreateMeetingRecordResponse;
+import com.aiw.backend.app.controller.api.meeting.payload.MeetingAnalysisDetailResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowAISummaryResponse;
+import com.aiw.backend.app.controller.api.meeting.payload.ShowMeetingListResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowSttStatusResponse;
 import com.aiw.backend.app.model.meeting.service.MeetingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,6 +14,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping(value = "/api/v1/meetings", produces = MediaType.APPLICATION_JSON_VALUE)
+@CrossOrigin(origins = "http://localhost:5173")
 public class MeetingController {
 
     private final MeetingService meetingService;
@@ -52,15 +54,22 @@ public class MeetingController {
         .body(meetingService.createMeeting(request));
   }
 
-  // 회의 생성 (녹음 파일 업로드)
+  // *회의 생성 (녹음 파일 업로드)
   @PostMapping(value = "/record-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @Operation(summary = "회의 생성 (녹음 파일 업로드)")
   public ResponseEntity<CreateMeetingRecordResponse> createMeetingByFile(
       @RequestPart("file") MultipartFile file,
-      @ModelAttribute CreateMeetingRecordRequest request
+      @ModelAttribute @Valid CreateMeetingRecordRequest request
   ) {
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(meetingService.createMeetingByFile(file, request));
+  }
+
+  // *회의 분석 결과 상세 조회
+  @GetMapping("/{meetingId}")
+  @Operation(summary = "회의 분석 결과 상세 조회", description = "요약, 결정사항, 액션아이템을 한꺼번에 조회합니다.")
+  public ResponseEntity<MeetingAnalysisDetailResponse> getMeetingAnalysis(@PathVariable Long meetingId) {
+    return ResponseEntity.ok(meetingService.getMeetingAnalysis(meetingId));
   }
 
   // STT 상태 조회
@@ -73,7 +82,7 @@ public class MeetingController {
   }
 
   // STT 원본 파일 다운로드
-  @GetMapping("/{meetingId}/stt/download")
+  @GetMapping(value = "/{meetingId}/stt/download", produces = MediaType.TEXT_PLAIN_VALUE)
   @Operation(summary = "회의 STT 원문 파일 다운로드")
   public ResponseEntity<Resource> downloadMeetingStt(@PathVariable Long meetingId) {
     return meetingService.downloadMeetingStt(meetingId);
@@ -88,13 +97,13 @@ public class MeetingController {
     return ResponseEntity.ok(meetingService.createSummary(meetingId));
   }
 
-  // 액션아이템 조회
-  @GetMapping("/{meetingId}/action-items")
-  @Operation(summary = "회의 요약 기반 액션아이템 조회")
-  public ResponseEntity<List<ShowActionItemResponse>> getActionItems(
-      @PathVariable Long meetingId
-  ) {
-    return ResponseEntity.ok(meetingService.getActionItems(meetingId));
-  }
+//  // 액션아이템 조회
+//  @GetMapping("/{meetingId}/action-items")
+//  @Operation(summary = "회의 요약 기반 액션아이템 조회")
+//  public ResponseEntity<List<ShowActionItemResponse>> getActionItems(
+//      @PathVariable Long meetingId
+//  ) {
+//    return ResponseEntity.ok(meetingService.getActionItems(meetingId));
+//  }
 
 }

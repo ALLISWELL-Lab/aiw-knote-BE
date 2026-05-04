@@ -42,12 +42,21 @@ public class Meeting {
   @Column(nullable = false)
   private String createdType;
 
+//  @Column(name = "transcript_path") // DB에는 파일이 위치한 경로만 저장
+//  private String transcriptPath; // 1st 데모 이후 사용 예정
+
+  @Column(columnDefinition = "TEXT")
+  private String transcript; // STT 원문 저장
+
+  @Column(columnDefinition = "TEXT") // 요약은 검색/조회용으로 DB에 바로 저장
+  private String aiSummary;
+
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "project_id", nullable = false)
   private Project project;
 
   @Column(nullable = false, columnDefinition = "tinyint", length = 1)
-  private Boolean activated;
+  private Boolean activated = true;
 
   @CreatedDate
   @Column(nullable = false, updatable = false)
