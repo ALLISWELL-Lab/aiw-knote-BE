@@ -23,7 +23,7 @@ public class CalendarDTO {
     public static class CalendarItemDTO {
         private Long id;          // 원본 엔티티의 ID (상세페이지 이동용)
 
-        private String title;     // 표시할 제목 (Meeting의 agenda 또는 ActionItem의 title)
+        private String title;     // 표시할 제목 (Meeting의 agenda 또는 ActionItem의 agenda)
 
         private LocalDateTime time; // 시작 시간 (Meeting의 scheduledAt 또는 ActionItem의 dueDate)
 

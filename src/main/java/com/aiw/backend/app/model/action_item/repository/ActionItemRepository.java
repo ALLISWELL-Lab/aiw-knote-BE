@@ -1,6 +1,8 @@
 package com.aiw.backend.app.model.action_item.repository;
 
 import com.aiw.backend.app.model.action_item.domain.ActionItem;
+import com.aiw.backend.app.model.meeting.domain.Meeting;
+import java.util.Collection;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
@@ -21,4 +23,5 @@ public interface ActionItemRepository extends JpaRepository<ActionItem, Long> {
 
   List<ActionItem> findByAssigneeMemberId(Long assigneeMemberId);
 
+  List<ActionItem> findByMeeting(Meeting meeting);
 }

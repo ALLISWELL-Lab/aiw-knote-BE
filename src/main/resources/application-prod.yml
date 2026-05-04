@@ -17,5 +17,9 @@ spring:
       password: ${REDIS_PASSWORD}
       ssl:
         enabled: true
+openai:
+  api:
+    key: ${OPENAI_API_KEY}
+    url: https://api.openai.com/v1
   jwt:
     secret: ${JWT_SECRET:local-dev-secret-change-me-please-32bytes-minimum}
