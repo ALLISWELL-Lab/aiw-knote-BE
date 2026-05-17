@@ -140,6 +140,7 @@ public class NotificationService {
         notificationRepository.save(notification);
     }
 
+    //시스템 내 모든 알림 데이터를 ID 순으로 조회
     public List<NotificationDTO> findAll() {
         final List<Notification> notifications = notificationRepository.findAll(Sort.by("id"));
         return notifications.stream()
@@ -147,18 +148,21 @@ public class NotificationService {
                 .toList();
     }
 
+    //특정 ID를 가진 단일 알림 상세 정보 조회
     public NotificationDTO get(final Long id) {
         return notificationRepository.findById(id)
                 .map(notification -> mapToDTO(notification, new NotificationDTO()))
                 .orElseThrow(NotFoundException::new);
     }
 
+    //새로운 알림 엔티티 생성 및 저장
     public Long create(final NotificationDTO notificationDTO) {
         final Notification notification = new Notification();
         mapToEntity(notificationDTO, notification);
         return notificationRepository.save(notification).getId();
     }
 
+    //기존 알림 정보 수정
     public void update(final Long id, final NotificationDTO notificationDTO) {
         final Notification notification = notificationRepository.findById(id)
                 .orElseThrow(NotFoundException::new);
@@ -166,12 +170,14 @@ public class NotificationService {
         notificationRepository.save(notification);
     }
 
+    //특정 알림 삭제
     public void delete(final Long id) {
         final Notification notification = notificationRepository.findById(id)
                 .orElseThrow(NotFoundException::new);
         notificationRepository.delete(notification);
     }
 
+    //알림 설정 필드와 알림 내용 필드를 DTO로 매핑
     private NotificationDTO mapToDTO(final Notification notification,
             final NotificationDTO notificationDTO) {
         notificationDTO.setId(notification.getId());
@@ -200,7 +206,8 @@ public class NotificationService {
         return notificationDTO;
     }
 
-    //마이페이지 전용 맵핑: nullable 필드 처리
+    //마이페이지 전용 맵핑: 알림 on off 및 시간 설정을 엔티티에 반영
+    // nullable 필드 처리
     private void mapSettingsToEntity(final NotificationDTO dto, final Notification entity) {
         if (dto.getMeetingAlarm() != null) {
             entity.setMeetingAlarm(dto.getMeetingAlarm());
@@ -223,6 +230,8 @@ public class NotificationService {
         }
     }
 
+    //일반 알림용 매핑
+    //제목, 내용, 관련 팀, 작성자 등 일반적 알림 정보를 엔티티에 반영
     private Notification mapToEntity(final NotificationDTO notificationDTO,
             final Notification notification) {
         notification.setContent(notificationDTO.getContent());
@@ -254,6 +263,8 @@ public class NotificationService {
         return notification;
     }
 
+    //회원 삭제 전 실행
+    //해당 회원과 연결된 알림 데이터가 있는지 확인
     @EventListener(BeforeDeleteMember.class)
     public void on(final BeforeDeleteMember event) {
         final ReferencedException referencedException = new ReferencedException();

@@ -2,6 +2,7 @@ package com.aiw.backend.app.controller.api.mainpage;
 
 import com.aiw.backend.app.model.announcement.dto.AnnouncementDTO;
 import com.aiw.backend.app.model.announcement.service.AnnouncementService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,6 +19,10 @@ public class AnnouncementController {
     }
 
     @PostMapping
+    @Operation(
+            summary = "팀 공지사항 생성",
+            description = "팀장 권한을 가진 사용자가 새로운 팀 공지사항을 작성, 팀원들에게 알림을 발송."
+    )
     public ResponseEntity<AnnouncementDTO> createAnnouncement(
             @RequestBody @Valid final AnnouncementDTO announcementDTO,
             @RequestParam(name = "memberId") final Long currentMemberId) {

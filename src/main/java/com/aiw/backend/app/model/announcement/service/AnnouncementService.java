@@ -43,6 +43,7 @@ public class AnnouncementService {
     }
 
     @Transactional
+    //팀 공지사항 생성, 팀장 권한 확인 후 팀원들에게 알림 발송
     public AnnouncementDTO create(final AnnouncementDTO dto, final Long currentMemberId) {
         // 1. 팀 및 작성자 존재 확인
         Team team = teamRepository.findById(dto.getTeamId())
@@ -79,6 +80,7 @@ public class AnnouncementService {
         return mapToDTO(saved, new AnnouncementDTO());
     }
 
+    //공지사항 엔티티 객체를 DTO로 변환
     private AnnouncementDTO mapToDTO(final Announcement announcement, final AnnouncementDTO dto) {
         dto.setId(announcement.getId());
         dto.setContent(announcement.getContent());
@@ -91,6 +93,8 @@ public class AnnouncementService {
         return dto;
     }
 
+    //팀 삭제 전 이벤트 리스너
+    //팀에 작성된 공지사항이 있는지 확인
     @EventListener(BeforeDeleteTeam.class)
     public void on(final BeforeDeleteTeam event) {
         final ReferencedException referencedException = new ReferencedException();
@@ -102,6 +106,8 @@ public class AnnouncementService {
         }
     }
 
+    //회원 삭제 전 이벤트 리스너
+    //해당 회원이 작성한 공지사항이 있는지 확인
     @EventListener(BeforeDeleteMember.class)
     public void on(final BeforeDeleteMember event) {
         final ReferencedException referencedException = new ReferencedException();
