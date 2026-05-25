@@ -33,7 +33,7 @@ public class Meeting {
   @Column(nullable = false)
   private LocalDateTime startedAt;
 
-  @Column(nullable = false)
+  @Column(nullable = true) // 회의 진행 중일 땐 없는 흐름이 더 자연스러우니까
   private LocalDateTime endedAt;
 
   @Column(nullable = false)

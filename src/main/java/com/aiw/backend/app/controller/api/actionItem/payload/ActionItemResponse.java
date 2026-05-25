@@ -1,4 +1,4 @@
-package com.aiw.backend.app.controller.api.meeting.payload.action_item;
+package com.aiw.backend.app.controller.api.actionItem.payload;
 
 public record ActionItemResponse(
     Long id,

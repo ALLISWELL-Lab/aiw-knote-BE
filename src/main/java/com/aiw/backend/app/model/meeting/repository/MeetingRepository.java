@@ -11,4 +11,7 @@ public interface MeetingRepository extends JpaRepository<Meeting, Long> {
 
     //AI 데일리 피드백: 전체 회의 중 오늘 회의 목록 조회
     List<Meeting> findByScheduledAtBetween(LocalDateTime start, LocalDateTime end);
+
+    // 최신 회의 순서대로 표시 (프로젝트 ID 기준)
+  List<Meeting> findByProjectIdAndActivatedTrueOrderByCreatedAtDesc(Long projectId);
 }

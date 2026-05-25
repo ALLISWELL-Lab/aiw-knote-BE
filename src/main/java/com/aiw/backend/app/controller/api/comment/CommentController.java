@@ -1,4 +1,4 @@
-package com.aiw.backend.app.controller.api.meeting;
+package com.aiw.backend.app.controller.api.comment;
 
 import com.aiw.backend.app.model.comment.dto.FeedbackDTO;
 import com.aiw.backend.app.model.comment.service.CommentService;
@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping(value = "/api/v1/comments", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
+@CrossOrigin(origins = "http://localhost:5173")
 @Tag(name = "Comment", description = "AI 피드백 및 코멘트 조회 API")
 public class CommentController {
     private final CommentService commentService;

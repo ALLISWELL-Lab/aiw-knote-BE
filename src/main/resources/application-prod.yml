@@ -16,10 +16,14 @@ spring:
       username: ${REDIS_USERNAME:default}
       password: ${REDIS_PASSWORD}
       ssl:
-        enabled: true
+        enabled: false
 openai:
   api:
     key: ${OPENAI_API_KEY}
     url: https://api.openai.com/v1
+deepgram:
+  api:
+    key: ${DEEPGRAM_API_KEY}
+    url: https://api.deepgram.com/v1/listen
   jwt:
     secret: ${JWT_SECRET:local-dev-secret-change-me-please-32bytes-minimum}

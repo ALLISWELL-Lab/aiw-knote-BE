@@ -10,8 +10,10 @@ import lombok.Setter;
 @AllArgsConstructor
 @NoArgsConstructor
 public class CreateMeetingRecordRequest {
+
+  private Long projectId;
   private String agenda;
   private String description;
-  private String startedAt;
-  private Long projectId;
+
+  // startedAt 은 서버에서 넣어주는 거로 따로 프론트 보내지 X
 }
