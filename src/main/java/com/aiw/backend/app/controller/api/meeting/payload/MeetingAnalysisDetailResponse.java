@@ -1,6 +1,6 @@
 package com.aiw.backend.app.controller.api.meeting.payload;
 
-import com.aiw.backend.app.controller.api.meeting.payload.action_item.ActionItemResponse;
+import com.aiw.backend.app.controller.api.actionItem.payload.ActionItemResponse;
 import java.util.List;
 
 public record MeetingAnalysisDetailResponse(

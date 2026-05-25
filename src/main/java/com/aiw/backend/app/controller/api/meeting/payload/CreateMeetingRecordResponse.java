@@ -13,7 +13,7 @@ import lombok.Setter;
 public class CreateMeetingRecordResponse {
     Long meetingId;
     Long fileId;
-    String title;
+    String agenda;
     String status;
     LocalDateTime recordedAt;
 }

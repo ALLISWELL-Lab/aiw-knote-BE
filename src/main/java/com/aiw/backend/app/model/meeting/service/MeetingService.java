@@ -1,17 +1,19 @@
 package com.aiw.backend.app.model.meeting.service;
 
+import com.aiw.backend.app.controller.api.actionItem.payload.ActionItemUpdateRequest;
 import com.aiw.backend.app.controller.api.meeting.payload.CreateMeetingRecordRequest;
 import com.aiw.backend.app.controller.api.meeting.payload.CreateMeetingRecordResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.MeetingAnalysisDetailResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowAISummaryResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowMeetingListResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowSttStatusResponse;
-import com.aiw.backend.app.controller.api.meeting.payload.action_item.ActionItemResponse;
+import com.aiw.backend.app.controller.api.actionItem.payload.ActionItemResponse;
 import com.aiw.backend.app.model.action_item.domain.ActionItem;
 import com.aiw.backend.app.model.action_item.repository.ActionItemRepository;
 import com.aiw.backend.app.model.meeting.domain.Meeting;
 import com.aiw.backend.app.model.meeting.dto.MeetingDTO;
 import com.aiw.backend.app.model.meeting.repository.MeetingRepository;
+import com.aiw.backend.app.model.member.repository.MemberRepository;
 import com.aiw.backend.app.model.project.domain.Project;
 import com.aiw.backend.app.model.project.repository.ProjectRepository;
 import com.aiw.backend.events.BeforeDeleteMeeting;
@@ -44,6 +46,8 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class MeetingService {
 
+  private final MemberRepository memberRepository;
+
   private final MeetingRepository meetingRepository;
   private final ApplicationEventPublisher publisher;
 
@@ -54,19 +58,24 @@ public class MeetingService {
   private final Map<Long, String> meetingStatusMap = new ConcurrentHashMap<>();
 
   private final OpenAiService openAiService;
+  private final DeepgramService deepgramService;
 
   public MeetingService(
+      final MemberRepository memberRepository,
       final MeetingRepository meetingRepository,
       final ApplicationEventPublisher publisher,
       final ProjectRepository projectRepository,
       final OpenAiService openAiService,
-      final ActionItemRepository actionItemRepository
+      final ActionItemRepository actionItemRepository,
+      final DeepgramService deepgramService
   ) {
+    this.memberRepository = memberRepository;
     this.meetingRepository = meetingRepository;
     this.publisher = publisher;
     this.projectRepository = projectRepository;
     this.openAiService = openAiService;
     this.actionItemRepository = actionItemRepository;
+    this.deepgramService = deepgramService;
   }
 
 //  public List<ShowMeetingListResponse> getMeetingRecords() {
@@ -75,6 +84,23 @@ public class MeetingService {
 //        new ShowMeetingListResponse(2L, "기획 회의", "2026-03-19T10:00:00", "PROCESSING")
 //    );
 //  }
+
+  // 회의 목록 조회
+  @Transactional(readOnly = true)
+  public List<ShowMeetingListResponse> getMeetingRecords(Long projectId) {
+
+    List<Meeting> meetings =
+        meetingRepository.findByProjectIdAndActivatedTrueOrderByCreatedAtDesc(projectId);
+
+    return meetings.stream()
+        .map(m -> new ShowMeetingListResponse(
+            m.getId(),
+            m.getAgenda(),
+            m.getCreatedAt().toString(),
+            m.getStatus()
+        ))
+        .collect(Collectors.toList());
+  }
 
   @Transactional
   public MeetingDTO create(final MeetingDTO meetingDTO) {
@@ -92,17 +118,47 @@ public class MeetingService {
     //저장된 엔티티를 다시 DTO로 변환하여 반환 (ID가 채워진 상태)
     return mapToDTO(savedMeeting, new MeetingDTO());
     }
-  // 회의 생성
+
+
+  // 회의 생성 - 직접 녹음 시작
+  @Transactional
   public CreateMeetingRecordResponse createMeeting(CreateMeetingRecordRequest request) {
-    Long meetingId = meetingSequence.getAndIncrement();
-    meetingStatusMap.put(meetingId, "PENDING");
+
+    Project project = projectRepository.findById(request.getProjectId())
+        .orElseThrow(() -> new NotFoundException("프로젝트를 찾을 수 없습니다."));
+
+    Meeting meeting = new Meeting();
+
+    meeting.setProject(project);
+
+    meeting.setAgenda(
+        request.getAgenda() != null && !request.getAgenda().isBlank()
+            ? request.getAgenda()
+            : "새로운 회의"
+    );
+
+    //meeting.setDescription(request.getDescription());
+
+    meeting.setStatus("RECORDING");
+    meeting.setCreatedType("RECORD");
+    meeting.setActivated(true);
+
+    LocalDateTime now = LocalDateTime.now();
+
+    meeting.setScheduledAt(now);
+    meeting.setStartedAt(now);
+
+    // 아직 녹음 중
+    meeting.setEndedAt(null);
+
+    Meeting savedMeeting = meetingRepository.saveAndFlush(meeting);
 
     return new CreateMeetingRecordResponse(
-        meetingId,
-        3L,
-        request.getAgenda(),
-        "PENDING",
-        LocalDateTime.now()
+        savedMeeting.getId(),
+        null,
+        savedMeeting.getAgenda(),
+        savedMeeting.getStatus(),
+        savedMeeting.getStartedAt()
     );
   }
 
@@ -161,8 +217,9 @@ public class MeetingService {
       Meeting meeting = meetingRepository.findById(meetingId)
           .orElseThrow(() -> new RuntimeException("회의를 찾을 수 없습니다."));
 
-      // 1. STT 호출 (Whisper)
-      String transcript = openAiService.transcribe(fileBytes, originalFilename);
+      // 1. STT 호출 (Deepgram)
+      String transcript = deepgramService.transcribeWithDiarization(fileBytes);
+
       meeting.setTranscript(transcript);
       meeting.setStatus("PROCESSING");
       meetingRepository.saveAndFlush(meeting);
@@ -177,12 +234,11 @@ public class MeetingService {
 
       // 3. Meeting 엔티티 업데이트 (사진의 기획안 반영)
       // DB 필드명에 맞춰 적절히 매핑하세요.
-      meeting.setAiSummary(root.path("summarySegments").toString()); // 메인 요약본
-      // meeting.setDecisions(root.path("decisions").toString()); // 결정사항 필드가 있다면 추가
+      meeting.setAiSummary(root.path("summarySegments").toString());
       meeting.setStatus("COMPLETED");
       meetingRepository.saveAndFlush(meeting);
 
-      // 4. ActionItem(AI TODO) 추출 및 저장
+      // 4. ActionItem(AI To_do) 추출 및 저장
       JsonNode actionItemsNode = root.path("actionItems");
       if (actionItemsNode.isArray()) {
         for (JsonNode node : actionItemsNode) {
@@ -192,13 +248,17 @@ public class MeetingService {
           item.setTitle(node.path("title").asText("새로운 할 일"));
           item.setMemo(node.path("memo").asText("내용 없음"));
 
+          item.setDueDate(node.path("dueDate").isMissingNode()
+              ? LocalDateTime.now().plusDays(3) // AI 제안이 없으면 기본 3일 뒤
+              : LocalDateTime.parse(node.path("dueDate").asText()));
+
           // 도메인 제약조건(nullable=false)에 따른 필수 기본값 세팅
           item.setMeeting(meeting);
           item.setCompleted(false);
           item.setActivated(true);
           item.setIsConfirmed(true); // AI가 생성한 것이므로 일단 true 혹은 false
           item.setDueDate(LocalDateTime.now().plusDays(3)); // 기본 마감기한 3일 뒤
-          item.setPhase(1L); // 기본 단계
+          item.setPhase(node.path("phase").asLong(1L)); // 기본 단계
           item.setScope("TEAM"); // 기본 범위
           item.setImage("default.png"); // 기본 이미지
 
@@ -215,18 +275,8 @@ public class MeetingService {
     }
   }
 
-  // 회의 목록 조회
-  public List<ShowMeetingListResponse> getMeetingRecords() {
-    List<Meeting> meetings = meetingRepository.findAll();
-    return meetings.stream()
-        .map(m -> new ShowMeetingListResponse(
-            m.getId(),
-            m.getAgenda(),
-            m.getCreatedAt().toString(),
-            m.getStatus()
-        ))
-        .collect(Collectors.toList());
-  }
+
+
 
   // 회의 요약 상세 분석 결과 조회
   public MeetingAnalysisDetailResponse getMeetingAnalysis(Long meetingId) {
@@ -378,5 +428,11 @@ public class MeetingService {
     return meetingRepository.findAll(Sort.by("id"))
         .stream()
         .collect(CustomCollectors.toSortedMap(Meeting::getId, Meeting::getAgenda));
+  }
+
+  public void updateSpeakerMapping(Long meetingId, Map<String, Long> speakerMap) {
+  }
+
+  public void confirmActionItems(Long meetingId, List<ActionItemUpdateRequest> requests) {
   }
 }

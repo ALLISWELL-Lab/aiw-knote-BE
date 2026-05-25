@@ -6,10 +6,14 @@ import com.aiw.backend.app.controller.api.meeting.payload.MeetingAnalysisDetailR
 import com.aiw.backend.app.controller.api.meeting.payload.ShowAISummaryResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowMeetingListResponse;
 import com.aiw.backend.app.controller.api.meeting.payload.ShowSttStatusResponse;
+import com.aiw.backend.app.controller.api.actionItem.payload.ActionItemUpdateRequest;
 import com.aiw.backend.app.model.meeting.service.MeetingService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -17,10 +21,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -40,8 +46,11 @@ public class MeetingController {
   // 회의 리스트 조회
   @GetMapping("/record")
   @Operation(summary = "회의 리스트 조회")
-  public ResponseEntity<List<ShowMeetingListResponse>> getMeetingRecords() {
-    return ResponseEntity.ok(meetingService.getMeetingRecords());
+  public ResponseEntity<List<ShowMeetingListResponse>> getMeetingRecords(
+      // 회의는 프로젝트에 속하니까 projectId 받아서 조회하기
+      @RequestParam Long projectId
+  ) {
+    return ResponseEntity.ok(meetingService.getMeetingRecords(projectId));
   }
 
   // 회의 생성 (녹음)
@@ -63,6 +72,38 @@ public class MeetingController {
   ) {
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(meetingService.createMeetingByFile(file, request));
+  }
+
+  // 화자-사용자 매칭 시 진행하는 임시 확정
+  @PatchMapping("/{meetingId}/speaker-mapping")
+  @Operation(summary = "화자-사용자 매칭 임시 확정",
+      description = "STT 결과의 '화자 0', '화자 1' 등이 실제 어떤 사용자(ID)인지 연결합니다. 이 작업이 완료되어야 요약본에 이름이 정상 반영됩니다."
+  )
+  public ResponseEntity<Void> mapSpeakers(
+      @Parameter(description = "매칭을 진행할 회의의 ID", example = "19")
+      @PathVariable Long meetingId,
+      @RequestBody
+      @Schema(
+          description = "화자 레이블과 사용자 ID의 매핑 정보",
+          example = "{\"화자 0\": 1, \"화자 1\": 3}",
+          requiredProperties = {"화자 이름"}
+      )
+      Map<String, Long> speakerMap
+  ) {
+    meetingService.updateSpeakerMapping(meetingId, speakerMap);
+    return ResponseEntity.ok().build();
+  }
+
+  // 액션아이템 최종 확정
+  @PostMapping("/{meetingId}/confirm-todos")
+  @Operation(summary = "회의 Action Items 최종 확정",
+      description = "사용자가 선택한 TODO와 매칭된 담당자 정보를 저장하고 회의를 완료 상태로 변경합니다.")
+  public ResponseEntity<Void> confirmTodos(
+      @PathVariable Long meetingId,
+      @RequestBody List<ActionItemUpdateRequest> requests
+  ) {
+    meetingService.confirmActionItems(meetingId, requests);
+    return ResponseEntity.ok().build();
   }
 
   // *회의 분석 결과 상세 조회
