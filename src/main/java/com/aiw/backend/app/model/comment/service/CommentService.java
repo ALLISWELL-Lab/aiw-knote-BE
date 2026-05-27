@@ -201,21 +201,129 @@ public class CommentService {
     }
 
     //대시보드: daily brief
+
+    @Transactional
+    public void generateDailyBriefAIComment(final Long memberId) {
+        // 1. 시간 범위 설정 (오늘)
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime endOfDay = LocalDate.now().atTime(LocalTime.MAX);
+
+        // 2. GPT에게 보낼 컨텍스트 데이터 수집 (오늘의 회의 & 마감 투두)
+        List<Meeting> meetings = meetingRepository.findByScheduledAtBetween(startOfDay, endOfDay);
+        List<ActionItem> todos = actionItemRepository.findByAssigneeMemberIdAndDueDateBetween(memberId, startOfDay, endOfDay);
+
+        // 3. GPT 전달용 텍스트 가공
+        String meetingContext = meetings.isEmpty() ? "- 오늘 예정된 회의가 없습니다." :
+                meetings.stream()
+                        .map(m -> String.format("- [회의] 주제: %s (시간: %s)", m.getAgenda(), m.getScheduledAt().toLocalTime()))
+                        .collect(Collectors.joining("\n"));
+
+        String todoContext = todos.isEmpty() ? "- 오늘 마감인 할 일이 없습니다." :
+                todos.stream()
+                        .map(t -> String.format("- [할 일] %s (마감: %s)", t.getTitle(), t.getDueDate().toLocalTime()))
+                        .collect(Collectors.joining("\n"));
+
+        // 4. GPT 프롬프트 작성 (JSON 포맷 강제)
+        String systemPrompt = """
+        당신은 IT 팀의 유능한 비서이자 커리어 코치입니다.
+        제공된 팀원의 '오늘 하루 일정(회의 및 마감 업무)'을 기반으로 대시보드 메인에 노출할 맞춤형 데일리 브리핑을 작성하세요.
+        응답은 다른 부연 설명 없이 반드시 아래 명시된 JSON 형식 하나만을 출력해야 합니다.
+        
+        {
+          "summary": "오늘 일정의 전체적인 분위기를 요약한 한 줄 요약 (예: '오늘은 회의 중심의 바쁜 하루가 예상됩니다.')",
+          "comment": "팀원을 격려하고 우선순위를 제안하는 따뜻하고 전문적인 어조의 AI 코멘트 (3~4줄 내외)"
+        }
+        """;
+
+        String userPromptTemplate = """
+        [오늘의 일정 데이터]
+        ■ 예정된 회의 목록:
+        ${meetingContext}
+        
+        ■ 오늘 마감해야 하는 할 일(Todo):
+        ${todoContext}
+        
+        [요청사항]
+        위 일정을 분석하여 이 팀원(멤버 ID: ${memberId})이 오늘 하루를 효율적으로 보낼 수 있도록 격려하는 맞춤형 summary와 comment를 JSON 규격에 맞게 리턴해 주세요.
+        """;
+
+        String userPrompt = userPromptTemplate
+                .replace("${meetingContext}", meetingContext)
+                .replace("${todoContext}", todoContext)
+                .replace("${memberId}", String.valueOf(memberId));
+
+        String summaryResult;
+        String commentResult;
+
+        try {
+            String aiResponse = openAiClient.askGpt(systemPrompt, userPrompt).trim();
+
+            // 마크다운 문법 정제
+            if (aiResponse.contains("```json")) {
+                aiResponse = aiResponse.split("```json")[1].split("```")[0].trim();
+            } else if (aiResponse.contains("```")) {
+                aiResponse = aiResponse.split("```")[1].trim();
+            }
+
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(aiResponse);
+
+            summaryResult = root.path("summary").asText("오늘도 활기찬 하루를 시작하세요!");
+            commentResult = root.path("comment").asText(aiResponse);
+
+        } catch (Exception e) {
+            log.error("DailyBrief AI JSON 파싱 실패", e);
+            summaryResult = "오늘 예정된 일정이 존재합니다. 대시보드를 확인하세요.";
+            commentResult = "오늘 일정을 성공적으로 완수할 수 있도록 응원합니다. 파이팅!";
+        }
+
+        // 5. DB 저장: 최신 데이터를 바로 긁어갈 수 있도록 DAILY_COMMENT 타입으로 인서트
+        // summaryResult는 엔티티 구조상 통합 보관을 위해 content 앞이나 별도 영역에 매핑할 수 있으나,
+        // 여기서는 comment 테이블 구조를 깨지 않기 위해 내용에 특수 구분자(||)를 두거나 content에 코멘트를 넣고 summary는 동적 조립하겠습니다.
+        // 가장 안전한 방법은 content에 AI 코멘트를 저장하고, 요약(summary)은 저장 시점의 메타데이터를 활용하는 것입니다.
+        saveAiComment(memberId, "DAILY_COMMENT", null, "요약:" + summaryResult + "||코멘트:" + commentResult);
+    }
+
     public DailyBriefDTO getDailyBrief(final Long memberId) {
         // 1. 시간 범위 설정 (오늘)
         LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
         LocalDateTime endOfDay = LocalDate.now().atTime(LocalTime.MAX);
 
         // 2. AI 데일리 코멘트 조회 (Comment 테이블 - DAILY_COMMENT)
-        // 수정: DB에 오늘의 코멘트가 없으면 Mock 저장소에서 찾아와 에러 방지
+        // AI 데일리 코멘트 최신순 1건 조회
         Comment comment = commentRepository.findFirstByMemberIdAndRefTypeOrderByIdDesc(memberId, "DAILY_COMMENT")
                 .orElseGet(() -> {
-                    CommentDTO mockDto = mockStorage.values().stream()
+                    return mockStorage.values().stream()
                             .filter(c -> c.getMemberId().equals(memberId) && "DAILY_COMMENT".equals(c.getRefType()))
                             .findFirst()
-                            .orElseThrow(() -> new NotFoundException("오늘의 AI 데일리 코멘트가 없습니다."));
-                    return mapToEntity(mockDto, new Comment());
+                            .map(dto -> mapToEntity(dto, new Comment()))
+                            .orElseGet(() -> {
+                                Comment defaultComment = new Comment();
+                                defaultComment.setContent("요약:오늘의 브리핑이 아직 생성되지 않았습니다.||코멘트:상단 생성 버튼을 눌러 AI 브리핑을 받아보세요!");
+                                memberRepository.findById(memberId).ifPresent(defaultComment::setMember);
+                                return defaultComment;
+                            });
                 });
+
+        // 2. 파싱 로직 (요약문과 코멘트 본문 분리)
+        String rawContent = comment.getContent();
+        String parsedSummary = "오늘의 일정을 확인하세요.";
+        String parsedComment = rawContent;
+
+        if (rawContent != null && rawContent.contains("요약:") && rawContent.contains("||코멘트:")) {
+            parsedSummary = rawContent.split("요약:")[1].split("\\|\\|코멘트:")[0].trim();
+            parsedComment = rawContent.split("\\|\\|코멘트:")[1].trim();
+        }
+
+        // 임시 파싱 내용을 DTO 규격에 맞춰 교체하기 위해 가짜 엔티티 가공
+        Comment parsedCommentEntity = new Comment();
+        parsedCommentEntity.setId(comment.getId());
+        parsedCommentEntity.setContent(parsedComment);
+        parsedCommentEntity.setRefType(comment.getRefType());
+        parsedCommentEntity.setMember(comment.getMember());
+        parsedCommentEntity.setActivated(comment.getActivated());
+        parsedCommentEntity.setDateCreated(comment.getDateCreated());
+
         // 3. 오늘 예정된 회의 목록 조회 (Meeting 테이블)
         List<DailyBriefDTO.MeetingInfoDTO> meetings = meetingRepository
                 .findByScheduledAtBetween(startOfDay, endOfDay).stream()
@@ -240,8 +348,8 @@ public class CommentService {
         return DailyBriefDTO.builder()
                 .id(comment.getId() == null ? 999L : comment.getId())
                 .date(LocalDateTime.now())
-                .summary("오늘 예정된 회의는 " + meetings.size() + "건, 마감 투두는 " + todos.size() + "건입니다.")
-                .dailyComment(mapToDTO(comment, new CommentDTO()))
+                .summary(parsedSummary) // AI가 만든 맞춤형 한 줄 요약 반영
+                .dailyComment(mapToDTO(parsedCommentEntity, new CommentDTO())) // 🚀 AI가 만든 구체적 어드바이스 코멘트 매핑!
                 .meetings(meetings)
                 .todos(todos)
                 .memberId(memberId)
