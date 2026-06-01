@@ -1,10 +1,11 @@
 package com.aiw.backend.infra.auth.oauth2;
 
-import com.aiw.backend.app.model.auth.AuthService;
-import com.aiw.backend.app.model.auth.dto.TokenDto;
 import com.aiw.backend.app.model.auth.token.RefreshTokenService;
 import com.aiw.backend.app.model.auth.token.UserBlackListRepository;
 import com.aiw.backend.app.model.auth.token.entity.RefreshToken;
+import com.aiw.backend.app.model.member.domain.Member;
+import com.aiw.backend.app.model.member.repository.MemberRepository;
+import com.aiw.backend.app.model.team_member.repository.TeamMemberRepository;
 import com.aiw.backend.infra.auth.jwt.JwtTokenProvider;
 import com.aiw.backend.infra.auth.jwt.TokenCookieFactory;
 import com.aiw.backend.infra.auth.jwt.dto.AccessTokenDto;
@@ -17,6 +18,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,6 +38,8 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
   private final JwtTokenProvider jwtTokenProvider;
   private final UserBlackListRepository userBlackListRepository;
   private final CookieAuthorizationRequestRepository cookieAuthorizationRequestRepository;
+  private final MemberRepository memberRepository;
+  private final TeamMemberRepository teamMemberRepository;
 
   @Value("${front-server.domain-A}")
   private String frontServerDomainA;
@@ -68,9 +72,11 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
     String roles = "ROLE_USER"; // 구글 로그인은 기본 유저 권한으로 설정
 
     userBlackListRepository.deleteById(email);
-
     AccessTokenDto accessToken = jwtTokenProvider.generateAccessToken(email, roles);
     RefreshToken refreshToken = refreshTokenService.saveWithAtId(accessToken.getJti());
+
+    // 기존 유저 or 새로운 유저 판단
+    boolean isNewUser = checkIsNewUser(email);
 
     ResponseCookie accessTokenCookie = TokenCookieFactory.create(
         "ACCESS_TOKEN",
@@ -87,9 +93,37 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
     response.addHeader("Set-Cookie", accessTokenCookie.toString());
     response.addHeader("Set-Cookie", refreshTokenCookie.toString());
 
-    // 5. 로그인 완료 후 프런트엔드로 리다이렉트
-    String targetUrl = "http://localhost:5173";
+    String frontBaseUrl = "http://localhost:5173"; // 프로드 환경이면 환경변수 처리
+    String targetUrl;
+
+    if (isNewUser) {
+      // 최초 로그인 사용자 -> 온보딩 페이지로 유도
+      targetUrl = frontBaseUrl + "/team-onboarding";
+      log.info("신규 사용자 로그인 - 온보딩 페이지로 리다이렉트: {}", email);
+    } else {
+      // 기존 가입 사용자 -> 대시보드(또는 메인 화면)로 유도
+      targetUrl = frontBaseUrl + "/dashboard";
+      log.info("기존 사용자 로그인 - 대시보드로 리다이렉트: {}", email);
+    }
+
     getRedirectStrategy().sendRedirect(request, response, targetUrl);
+  }
+
+  // 신규 유저 판단을 위한 가이드 메서드
+  private boolean checkIsNewUser(String email) {
+    // 먼저 이메일로 유저가 등록되어 있는지 확인
+    Optional<Member> memberOpt = memberRepository.findByEmail(email);
+
+    if (memberOpt.isEmpty()) {
+      // 아예 회원가입도 안 된 진짜 신규 유저라면 온보딩 대상
+      return true;
+    }
+
+    // 회원은 존재하지만, 유저-팀 매핑 테이블에 이 유저의 기록이 없다면 팀이 없는 유저(true)
+    Long memberId = memberOpt.get().getId();
+    boolean hasActiveTeam = teamMemberRepository.existsByMemberIdAndActivatedTrue(memberId);
+
+    return !hasActiveTeam; // 팀이 없으면(!true -> true) 온보딩 페이지로 리다이렉트
   }
 
   protected String determineTargetUrl(HttpServletRequest request, HttpServletResponse response,

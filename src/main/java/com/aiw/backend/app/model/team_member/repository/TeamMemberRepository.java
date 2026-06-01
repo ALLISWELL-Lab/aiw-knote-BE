@@ -18,4 +18,7 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
     Optional<TeamMember> findByTeamIdAndRoleAndActivatedTrue(Long teamId, String role);
     //특정 팀에 특정 멤버가 이미 있는지 확인할 때 사용
     Optional<TeamMember> findByTeamIdAndMemberId(Long teamId, Long memberId);
+
+  // 로그인 시 신규 유저 판별용: 특정 유저가 '현재 활동 중인 팀'이 하나라도 있는지 확인
+  boolean existsByMemberIdAndActivatedTrue(Long memberId);
 }
