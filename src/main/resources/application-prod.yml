@@ -17,6 +17,16 @@ spring:
       password: ${REDIS_PASSWORD}
       ssl:
         enabled: false
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope:
+              - email
+              - profile
 openai:
   api:
     key: ${OPENAI_API_KEY}
@@ -26,4 +36,10 @@ deepgram:
     key: ${DEEPGRAM_API_KEY}
     url: https://api.deepgram.com/v1/listen
   jwt:
+    # 환경변수가 없을 때만 우측의 로컬용 기본 문자열을 예비로 사용합니다.
     secret: ${JWT_SECRET:local-dev-secret-change-me-please-32bytes-minimum}
+front-server:
+  domain-A: ${PROD_FRONT_DOMAIN}
+  redirect-url: ${PROD_FRONT_REDIRECT}
+url:
+  backend: ${PROD_BACKEND_URL}

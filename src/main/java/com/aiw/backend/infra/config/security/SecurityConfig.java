@@ -3,6 +3,8 @@ package com.aiw.backend.infra.config.security;
 import com.aiw.backend.infra.auth.jwt.JwtAuthenticationEntryPoint;
 import com.aiw.backend.infra.auth.jwt.filter.JwtAuthenticationFilter;
 import com.aiw.backend.infra.auth.jwt.filter.JwtExceptionFilter;
+import com.aiw.backend.infra.auth.oauth2.CustomOAuth2UserService;
+import com.aiw.backend.infra.auth.oauth2.OAuth2SuccessHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.security.autoconfigure.web.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +18,12 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -29,6 +37,9 @@ public class SecurityConfig {
   private final JwtExceptionFilter jwtExceptionFilter;
   private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
+  private final CustomOAuth2UserService customOAuth2UserService;
+  private final OAuth2SuccessHandler oAuth2SuccessHandler;
+  
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     http
@@ -58,6 +69,16 @@ public class SecurityConfig {
                     .requestMatchers("/api/notifications/**").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()
+        )
+
+        // 구글 OAuth2 로그인 설정 활성화
+        .oauth2Login(oauth2 -> oauth2
+            .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+            .successHandler(oAuth2SuccessHandler)
+        )
+        // 에러 핸들링 브릿지 등록
+        .exceptionHandling(exception -> exception
+            .authenticationEntryPoint(jwtAuthenticationEntryPoint)
         )
         // jwtAuthenticationEntryPoint 는 oauth 인증을 사용할 경우 제거
         .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
