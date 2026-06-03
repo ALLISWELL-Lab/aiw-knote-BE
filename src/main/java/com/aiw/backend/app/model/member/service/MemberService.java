@@ -154,6 +154,18 @@ public class MemberService {
     }
 
 
+  @Transactional(readOnly = true)
+  public MemberDTO getShowInfoByEmail(String email) {
+    // 1. 레포지토리에서 이메일로 유저 엔티티를 찾습니다.
+    Member member = memberRepository.findByEmail(email)
+        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
-
+    // 2. 기존에 팀원분이 만들어 두신 DTO 변환 빌더나 메서드를 활용해 리턴합니다.
+    // (팀원분 코드의 스펙에 맞춰 엔티티를 DTO로 변환해 줍니다.)
+    return MemberDTO.builder()
+        .id(member.getId())
+        .name(member.getName())
+        .email(member.getEmail())
+        .build();
+  }
 }

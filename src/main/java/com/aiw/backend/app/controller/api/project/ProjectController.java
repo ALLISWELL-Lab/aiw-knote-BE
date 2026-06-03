@@ -1,18 +1,15 @@
-package com.aiw.backend.app.controller.api.team;
+package com.aiw.backend.app.controller.api.project;
 
 import com.aiw.backend.app.model.project.dto.ProjectDTO;
 import com.aiw.backend.app.model.project.service.ProjectService;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
-
 @RestController
-@RequestMapping(value = "/api/projects", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/v1/projects", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ProjectController {
     private final ProjectService projectService;
 
