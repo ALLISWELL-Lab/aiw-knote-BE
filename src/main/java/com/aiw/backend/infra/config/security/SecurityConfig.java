@@ -5,6 +5,7 @@ import com.aiw.backend.infra.auth.jwt.filter.JwtAuthenticationFilter;
 import com.aiw.backend.infra.auth.jwt.filter.JwtExceptionFilter;
 import com.aiw.backend.infra.auth.oauth2.CustomOAuth2UserService;
 import com.aiw.backend.infra.auth.oauth2.OAuth2SuccessHandler;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.security.autoconfigure.web.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +27,9 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -56,17 +60,15 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs").permitAll()
                 .requestMatchers("/", "/error", "/auth/login", "/auth/signup").permitAll()
                 .requestMatchers("/api/v1/auth/**").permitAll()
-                    .requestMatchers("/api/members/**").permitAll()
-                    .requestMatchers("/api/teams/**").permitAll()
-                    .requestMatchers("/api/teamMembers/**").permitAll()
-                    .requestMatchers("/api/projects/**").permitAll()
+                    .requestMatchers("/api/v1/members/**").permitAll()
+                    .requestMatchers("/api/v1/projects/**").permitAll()
                     .requestMatchers("/api/v1/meetings/**").permitAll()
                     .requestMatchers("/api/v1/actionItems/**").permitAll()
                     .requestMatchers("/api/v1/mypage/**").permitAll()
                     .requestMatchers("/api/v1/comments/**").permitAll()
-                    .requestMatchers("/api/personalMemos/**").permitAll()
-                    .requestMatchers("/api/announcements/**").permitAll()
-                    .requestMatchers("/api/notifications/**").permitAll()
+                    .requestMatchers("/api/v1/personalMemos/**").permitAll()
+                    .requestMatchers("/api/v1/announcements/**").permitAll()
+                    .requestMatchers("/api/v1/notifications/**").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()
         )
@@ -96,6 +98,24 @@ public class SecurityConfig {
   @Bean
   public PasswordEncoder passwordEncoder() {
     return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+  }
+
+  @Bean
+  public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration configuration = new CorsConfiguration();
+
+    // 1. 프론트엔드 포트 명시
+    configuration.setAllowedOrigins(List.of("http://localhost:5173"));
+    // 2. 사용할 HTTP 메서드 허용
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+    // 3. 모든 헤더 요청 허용
+    configuration.setAllowedHeaders(List.of("*"));
+    // 4. 쿠키와 JWT 토큰 세션을 공유할 수 있도록 설정
+    configuration.setAllowCredentials(true);
+
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", configuration);
+    return source;
   }
 }
 

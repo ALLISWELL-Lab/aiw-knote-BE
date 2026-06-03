@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping(value = "/api/personalMemos", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/v1/personalMemos", produces = MediaType.APPLICATION_JSON_VALUE)
 public class PersonalMemoController {
     private final PersonalMemoService personalMemoService;
 

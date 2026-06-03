@@ -1,94 +1,105 @@
 package com.aiw.backend.app.model.invite.service;
 
-import com.aiw.backend.events.BeforeDeleteTeam;
 import com.aiw.backend.app.model.invite.domain.Invite;
 import com.aiw.backend.app.model.invite.dto.InviteDTO;
+import com.aiw.backend.app.model.invite.dto.InviteJoinRequest;
 import com.aiw.backend.app.model.invite.repository.InviteRepository;
+import com.aiw.backend.app.model.member.domain.Member;
+import com.aiw.backend.app.model.member.repository.MemberRepository;
 import com.aiw.backend.app.model.team.domain.Team;
 import com.aiw.backend.app.model.team.repository.TeamRepository;
-import com.aiw.backend.util.NotFoundException;
-import com.aiw.backend.util.ReferencedException;
-import java.util.List;
-import org.springframework.context.event.EventListener;
-import org.springframework.data.domain.Sort;
+import com.aiw.backend.app.model.team.service.TeamService;
+import com.aiw.backend.app.model.team_member.domain.TeamMember;
+import com.aiw.backend.app.model.team_member.repository.TeamMemberRepository;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 
 @Service
+@RequiredArgsConstructor
 public class InviteService {
 
   private final InviteRepository inviteRepository;
+  private final MemberRepository memberRepository;
+  private final TeamService teamService;
   private final TeamRepository teamRepository;
+  private final TeamMemberRepository teamMemberRepository;
 
-  public InviteService(final InviteRepository inviteRepository,
-      final TeamRepository teamRepository) {
-    this.inviteRepository = inviteRepository;
-    this.teamRepository = teamRepository;
+  @Transactional
+  public void joinTeamByToken(String email, InviteJoinRequest request) {
+    // 1. 로그인한 유저 확인하여 ID(Long) 확보
+    Member member = memberRepository.findByEmail(email)
+        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+
+    // 2. 팀원분이 만들어 두신 joinTeam(초대코드, 멤버ID) 메서드를 그대로 호출 🚀
+    teamService.joinTeam(request.getInviteToken(), member.getId());
   }
 
-  public List<InviteDTO> findAll() {
-    final List<Invite> invites = inviteRepository.findAll(Sort.by("id"));
-    return invites.stream()
-        .map(invite -> mapToDTO(invite, new InviteDTO()))
-        .toList();
+  // 팀 ID로 활성화된 초대 코드 조회
+  @Transactional(readOnly = true)
+  public InviteDTO getInviteCodeByTeam(Long teamId) {
+    Invite invite = inviteRepository.findByTeamIdAndActivatedTrue(teamId)
+        .orElseThrow(() -> new IllegalArgumentException("해당 팀에 활성화된 초대 코드가 없습니다."));
+
+    // 엔티티를 DTO로 변환하여 반환 (매핑 구조에 맞게 커스텀)
+    InviteDTO dto = new InviteDTO();
+    dto.setId(invite.getId());
+    dto.setInviteToken(invite.getInviteToken());
+    dto.setExpiresAt(invite.getExpiresAt());
+    dto.setActivated(invite.getActivated());
+    dto.setTeam(invite.getTeam().getId());
+    return dto;
   }
 
-  public InviteDTO get(final Long id) {
-    return inviteRepository.findById(id)
-        .map(invite -> mapToDTO(invite, new InviteDTO()))
-        .orElseThrow(NotFoundException::new);
+  // 기존 코드 폐기 후 10자리 난수로 초대 코드 재발급
+  @Transactional
+  public InviteDTO regenerateInviteCode(String email, Long teamId) {
+    // 1. 기존에 켜져 있던 초대 코드가 있다면 찾아서 비활성화(폐기) 처리
+    inviteRepository.findByTeamIdAndActivatedTrue(teamId)
+        .ifPresent(existingInvite -> {
+          existingInvite.setActivated(false);
+          existingInvite.setRevokedAt(java.time.LocalDateTime.now());
+          inviteRepository.save(existingInvite);
+        });
+
+    // 2. 10자리 문자열 난수 생성 (아까 정의한 규칙 적용)
+    String newGeneratedCode = InviteCodeGenerator.generateInviteCode();
+
+    // 3. 새 Invite 엔티티 구워서 DB에 세이브
+    Team team = teamRepository.findById(teamId)
+        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 팀입니다."));
+
+    Invite newInvite = new Invite();
+    newInvite.setInviteToken(newGeneratedCode);
+    newInvite.setTeam(team);
+    newInvite.setActivated(true);
+    newInvite.setExpiresAt(java.time.LocalDateTime.now().plusYears(1)); // 유효기한 1년 넉넉하게 보장
+
+    inviteRepository.save(newInvite);
+
+    // 4. 리턴용 DTO 바인딩
+    InviteDTO dto = new InviteDTO();
+    dto.setInviteToken(newGeneratedCode);
+    dto.setTeam(teamId);
+    return dto;
   }
 
-  public Long create(final InviteDTO inviteDTO) {
-    final Invite invite = new Invite();
-    mapToEntity(inviteDTO, invite);
-    return inviteRepository.save(invite).getId();
-  }
+  public class InviteCodeGenerator {
 
-  public void update(final Long id, final InviteDTO inviteDTO) {
-    final Invite invite = inviteRepository.findById(id)
-        .orElseThrow(NotFoundException::new);
-    mapToEntity(inviteDTO, invite);
-    inviteRepository.save(invite);
-  }
+    private static final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private static final int CODE_LENGTH = 10;
+    private static final SecureRandom random = new SecureRandom();
 
-  public void delete(final Long id) {
-    final Invite invite = inviteRepository.findById(id)
-        .orElseThrow(NotFoundException::new);
-    inviteRepository.delete(invite);
-  }
-
-  private InviteDTO mapToDTO(final Invite invite, final InviteDTO inviteDTO) {
-    inviteDTO.setId(invite.getId());
-    inviteDTO.setInviteToken(invite.getInviteToken());
-    inviteDTO.setExpiresAt(invite.getExpiresAt());
-    inviteDTO.setRevokedAt(invite.getRevokedAt());
-    inviteDTO.setActivated(invite.getActivated());
-    inviteDTO.setTeam(invite.getTeam() == null ? null : invite.getTeam().getId());
-    return inviteDTO;
-  }
-
-  private Invite mapToEntity(final InviteDTO inviteDTO, final Invite invite) {
-    invite.setInviteToken(inviteDTO.getInviteToken());
-    invite.setExpiresAt(inviteDTO.getExpiresAt());
-    invite.setRevokedAt(inviteDTO.getRevokedAt());
-    invite.setActivated(inviteDTO.getActivated());
-    final Team team = inviteDTO.getTeam() == null ? null : teamRepository.findById(inviteDTO.getTeam())
-        .orElseThrow(() -> new NotFoundException("team not found"));
-    invite.setTeam(team);
-    return invite;
-  }
-
-  @EventListener(BeforeDeleteTeam.class)
-  public void on(final BeforeDeleteTeam event) {
-    final ReferencedException referencedException = new ReferencedException();
-    final Invite teamInvite = inviteRepository.findFirstByTeamId(event.getId());
-    if (teamInvite != null) {
-      referencedException.setKey("team.invite.team.referenced");
-      referencedException.addParam(teamInvite.getId());
-      throw referencedException;
+    public static String generateInviteCode() {
+      StringBuilder sb = new StringBuilder(CODE_LENGTH);
+      for (int i = 0; i < CODE_LENGTH; i++) {
+        int index = random.nextInt(CHARACTERS.length());
+        sb.append(CHARACTERS.charAt(index));
+      }
+      return sb.toString();
     }
   }
-
-
 }

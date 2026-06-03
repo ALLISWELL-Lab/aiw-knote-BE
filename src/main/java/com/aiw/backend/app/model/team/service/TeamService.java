@@ -1,8 +1,10 @@
 package com.aiw.backend.app.model.team.service;
 
 import com.aiw.backend.app.model.member.domain.Member;
+import com.aiw.backend.app.model.member.dto.MemberDTO;
 import com.aiw.backend.app.model.member.repository.MemberRepository;
 import com.aiw.backend.app.model.team_member.domain.TeamMember;
+import com.aiw.backend.app.model.team_member.repository.TeamMemberRepository;
 import com.aiw.backend.events.BeforeDeleteTeam;
 import com.aiw.backend.app.model.team.domain.Team;
 import com.aiw.backend.app.model.team.dto.TeamDTO;
@@ -14,6 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import java.util.stream.Collectors;
+import lombok.Builder;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -26,12 +30,12 @@ public class TeamService {
 
     private final TeamRepository teamRepository;
     private final MemberRepository memberRepository; // 추가
-    private final com.aiw.backend.app.model.team_member.repository.TeamMemberRepository teamMemberRepository;
+    private final TeamMemberRepository teamMemberRepository;
     private final ApplicationEventPublisher publisher;
 
     public TeamService(final TeamRepository teamRepository,
                        final MemberRepository memberRepository,
-                       final com.aiw.backend.app.model.team_member.repository.TeamMemberRepository teamMemberRepository,
+                       final TeamMemberRepository teamMemberRepository,
             final ApplicationEventPublisher publisher) {
         this.teamRepository = teamRepository;
         this.memberRepository = memberRepository;
@@ -63,38 +67,41 @@ public class TeamService {
 
     @Transactional
     public TeamDTO create(final TeamDTO teamDTO) {
-        // 1. 팀 엔티티 생성 및 기본 매핑
-        final Team team = new Team();
-        team.setName(teamDTO.getName());
-        team.setInviteCode(generateInviteCode()); // 8자리 랜덤 코드
-        team.setActivated(true);
+      // 1. 롬복 빌더 패턴을 사용하여 DTO를 Team 엔티티로 완벽하게 변환 및 생성합니다.
+      Team team = Team.builder()
+          .name(teamDTO.getName())
+          .inviteCode(teamDTO.getInviteCode())
+          .activated(true) // 기본 활성화
+          .build();
 
-        final Team savedTeam = teamRepository.save(team);
+      // 2. 데이터베이스에 팀을 먼저 저장합니다.
+      Team savedTeam = teamRepository.save(team);
 
-        // 2. 생성자(현재 로그인 유저) 조회
-        // teamDTO에 leaderId가 담겨 온다고 가정합니다.
-        final Long currentMemberId = teamDTO.getLeaderId();
-        final Member creator = memberRepository.findById(currentMemberId)
-                .orElseThrow(() -> new NotFoundException("회원을 찾을 수 없습니다. (ID: " + currentMemberId + ")"));
+      // 3. DTO에 이미 담겨있는 leaderId를 꺼내와서 팀장(LEADER) 매핑을 진행합니다 🚀
+      Long leaderId = teamDTO.getLeaderId();
+      if (leaderId != null) {
+        Member leader = memberRepository.findById(leaderId)
+            .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
-        // 3. TeamMember 등록 (생성자를 LEADER로 설정)
-        final TeamMember teamMember = new TeamMember();
-        teamMember.setMember(creator);
-        teamMember.setTeam(savedTeam);
-        teamMember.setRole("LEADER");
-        teamMember.setActivated(true);
+        TeamMember teamLeader = new TeamMember();
+        teamLeader.setTeam(savedTeam);     // 방금 생성된 진짜 팀 객체 매핑
+        teamLeader.setMember(leader);      // 로그인한 나(멤버) 매핑
+        teamLeader.setRole("LEADER");     // 역할은 팀장!
+        teamLeader.setActivated(true);
 
-        teamMemberRepository.save(teamMember);
+        teamMemberRepository.save(teamLeader);
+        System.out.println("🎉 [팀장 자동 등록] 팀 ID: " + savedTeam.getId() + "번에 유저 " + leader.getName() + "님이 팀장으로 조인되었습니다.");
+      }
 
-        // 4. 결과 반환: ID만 주는 것이 아니라 상세 정보 DTO를 빌드하여 반환
-        return TeamDTO.builder()
-                .id(savedTeam.getId())
-                .name(savedTeam.getName())
-                .inviteCode(savedTeam.getInviteCode())
-                .leaderId(creator.getId())
-                .leaderName(creator.getName())
-                .activated(savedTeam.getActivated())
-                .build();
+      // 4. 팀원분들의 응답 컨벤션에 맞게 빌더 패턴으로 최종 반환할 TeamDTO를 조립합니다.
+      return TeamDTO.builder()
+          .id(savedTeam.getId())
+          .name(savedTeam.getName())
+          .inviteCode(savedTeam.getInviteCode())
+          .activated(savedTeam.getActivated())
+          .leaderId(leaderId)
+          .message("팀이 정상적으로 생성되고 팀장이 임명되었습니다.")
+          .build();
     }
 
     //팀 멤버 추가
@@ -237,4 +244,18 @@ public class TeamService {
                 .collect(CustomCollectors.toSortedMap(Team::getId, Team::getId));
     }
 
+    // 팀원 가져오기
+    public List<MemberDTO> getTeamMembers(Long teamId) {
+      // 1. 해당 팀 ID로 조회한 팀원 매핑 테이블(TeamMember)에서 유저들을 긁어옵니다.
+      return teamMemberRepository.findByTeamId(teamId).stream()
+          .map(teamMember -> {
+            Member member = teamMember.getMember(); // 유저 엔티티 낚아채기
+            return MemberDTO.builder()
+                .id(member.getId())
+                .name(member.getName())
+                .email(member.getEmail())
+                .build();
+          })
+          .collect(Collectors.toList());
+    }
 }

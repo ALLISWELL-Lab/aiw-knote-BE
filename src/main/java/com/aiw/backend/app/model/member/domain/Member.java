@@ -30,7 +30,7 @@ public class Member {
   @Column(nullable = true) // 임시
   private String password;
 
-  @Column(nullable = false)
+  @Column(nullable = true)
   private String provider;
 
   @Column(nullable = false, unique = true)

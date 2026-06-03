@@ -1,5 +1,6 @@
 package com.aiw.backend.app.controller.api.team;
 
+import com.aiw.backend.app.model.member.dto.MemberDTO;
 import com.aiw.backend.app.model.team.dto.TeamDTO;
 import com.aiw.backend.app.model.team.service.TeamService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 
 @RestController
-@RequestMapping(value = "/api/teams", produces = MediaType.APPLICATION_JSON_VALUE)
+@RequestMapping(value = "/api/v1/teams", produces = MediaType.APPLICATION_JSON_VALUE)
 public class TeamController {
 
     private final TeamService teamService;
@@ -31,6 +32,19 @@ public class TeamController {
     public ResponseEntity<TeamDTO> getTeam(@PathVariable(name = "id") final Long id) {
         return ResponseEntity.ok(teamService.get(id));
     }
+
+  // 팀원 목록 조회
+  @GetMapping("/{id}/members")
+  @Operation(summary = "팀별 멤버 목록 조회", description = "해당 팀 ID에 속한 모든 팀원(멤버) 목록을 조회합니다.")
+  public ResponseEntity<List<MemberDTO>> getTeamMembers(@PathVariable(name = "id") final Long id) {
+
+    // 💡 팀원분이 서비스에 만들어둔 메서드 이름이 다를 수 있습니다.
+    // 보통 teamService.findMembersByTeamId(id) 나 teamService.getTeamMembers(id) 형태로 구현되어 있을 겁니다.
+    // 인텔리제이에서 .을 찍고 추천 코드가 뜨는 것을 확인하며 매핑해 보세요!
+    List<MemberDTO> teamMembers = teamService.getTeamMembers(id);
+
+    return ResponseEntity.ok(teamMembers);
+  }
 
     @PostMapping
     public ResponseEntity<TeamDTO> createTeam(@RequestBody @Valid final TeamDTO teamDTO) {
@@ -72,8 +86,5 @@ public class TeamController {
         // 테스트용: 현재 로그인 유저가 ID: 2이라고 가정
         return ResponseEntity.ok(teamService.leaveTeam(id, memberId, teamDTO.getDelegateMemberId()));
     }
-
-
-
 
 }
